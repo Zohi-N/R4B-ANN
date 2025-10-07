@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="sl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Prijava | E-Ocene</title>
+  <style>
+    body {
+      margin: 0;
+      background: linear-gradient(135deg, #8884FF, #AB64D6);
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: Arial, sans-serif;
+    }
+
+    .gumb {
+      position: absolute;
+      top: 30px;
+      right: 30px;
+      background: white;
+      color: #4361ee;
+      padding: 10px 20px;
+      border-radius: 30px;
+      text-decoration: none;
+      font-weight: bold;
+    }
+
+    .okno {
+      background: white;
+      width: 400px;
+      padding: 40px;
+      border-radius: 20px;
+      box-shadow: 0 5px 20px rgba(0,0,0,0.2);
+      text-align: center;
+    }
+
+    input {
+      width: 100%;
+      padding: 12px;
+      margin: 8px 0;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      box-sizing: border-box;
+    }
+
+    button {
+      width: 100%;
+      padding: 12px;
+      background: #4361ee;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      margin-top: 10px;
+      cursor: pointer;
+    }
+
+    .napaka {
+      color: red;
+      font-size: 14px;
+      text-align: left;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+  <a href="#" class="gumb" onclick="preklopi()">Registracija</a>
+
+  <div class="okno">
+    <!-- PRIJAVA -->
+    <form id="prijava" onsubmit="preveriPriavo(event)">
+      <h2>Prijava</h2>
+      <input type="text" placeholder="Uporabniško ime" id="uporabnik_prijava">
+      <div class="napaka" id="napaka1">Uporabniško ime je obvezno.</div>
+
+      <input type="password" placeholder="Geslo" id="geslo_prijava">
+      <div class="napaka" id="napaka2">Geslo mora imeti vsaj 10 znakov, številko in poseben znak.</div>
+
+      <button type="submit">Prijavi se</button>
+    </form>
+
+    <form id="registracija" style="display: none;" onsubmit="preveriRegistracijo(event)">
+      <h2>Registracija</h2>
+      <input type="text" placeholder="Uporabniško ime" id="uporabnik_reg">
+      <div class="napaka" id="napaka3">Uporabniško ime je obvezno.</div>
+
+      <input type="email" placeholder="E-pošta" id="email_reg">
+      <div class="napaka" id="napaka4">Vnesite veljaven e-poštni naslov.</div>
+
+      <input type="text" placeholder="Razred" id="razred_reg">
+      <div class="napaka" id="napaka6">Gesli se ne ujemata/.</div>
+
+      <input type="password" placeholder="Geslo" id="geslo_reg">
+      <div class="napaka" id="napaka5">Geslo mora imeti vsaj 10 znakov, številko in poseben znak.</div>
+
+      <input type="password" placeholder="Ponovite geslo" id="geslo2_reg">
+      <div class="napaka" id="napaka6">Gesli se ne ujemata.</div>
+
+
+      <button type="submit">Registriraj se</button>
+    </form>
+  </div>
+
+  <script>
+    let vRegistraciji = false;
+
+    function preklopi() {
+      const prijava = document.getElementById('prijava');
+      const registracija = document.getElementById('registracija');
+      const gumb = document.querySelector('.gumb');
+
+      if (vRegistraciji) {
+
+        prijava.style.display = 'block';
+        registracija.style.display = 'none';
+        gumb.textContent = 'Registracija';
+        vRegistraciji = false;
+      } else {
+
+        prijava.style.display = 'none';
+        registracija.style.display = 'block';
+        gumb.textContent = 'Nazaj na prijavo';
+        vRegistraciji = true;
+      }
+
+      
+      skrijNapake();
+    }
+
+    function skrijNapake() {
+      const napake = document.querySelectorAll('.napaka');
+      napake.forEach(n => n.style.display = 'none');
+    }
+
+    function veljavnoGeslo(geslo) {
+      return geslo.length >= 10 &&
+             /\d/.test(geslo) &&
+             /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(geslo);
+    }
+
+    function veljavenEmail(email) {
+      return email.includes('@') && email.includes('.');
+    }
+
+    function preveriPriavo(event) {
+      event.preventDefault();
+      skrijNapake();
+
+      const uporabnik = document.getElementById('uporabnik_prijava').value.trim();
+      const geslo = document.getElementById('geslo_prijava').value;
+
+      if (!uporabnik) {
+        document.getElementById('napaka1').style.display = 'block';
+        return;
+      }
+      if (!veljavnoGeslo(geslo)) {
+        document.getElementById('napaka2').style.display = 'block';
+        return;
+      }
+
+      alert('Uspešna prijava!');
+    }
+
+    function preveriRegistracijo(event) {
+      event.preventDefault();
+      skrijNapake();
+
+      const uporabnik = document.getElementById('uporabnik_reg').value.trim();
+      const email = document.getElementById('email_reg').value.trim();
+      const geslo = document.getElementById('geslo_reg').value;
+      const geslo2 = document.getElementById('geslo2_reg').value;
+
+      if (!uporabnik) {
+        document.getElementById('napaka3').style.display = 'block';
+        return;
+      }
+      if (!veljavenEmail(email)) {
+        document.getElementById('napaka4').style.display = 'block';
+        return;
+      }
+      if (!veljavnoGeslo(geslo)) {
+        document.getElementById('napaka5').style.display = 'block';
+        return;
+      }
+      if (geslo !== geslo2) {
+        document.getElementById('napaka6').style.display = 'block';
+        return;
+      }
+
+      alert('Uspešna registracija!');
+    }
+  </script>
+
+</body>
+</html>
