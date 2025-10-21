@@ -1,0 +1,141 @@
+ CREATE TABLE DIJAKI(
+ id_dijaka INT UNSIGNED PRIMARY KEY,
+ ime_dijaka VARCHAR(255) NOT NULL,
+ priimek_dijaka VARCHAR(255) NOT NULL,
+ razred VARCHAR(255) NOT NULL,
+ gmail VARCHAR(255) NOT NULL,
+ razred_id INT NOT NULL
+);
+
+ALTER TABLE
+    DIJAKI ADD UNIQUE dijaki_gmail_unique(gmail);
+CREATE TABLE PROFESORJI(
+    profesor_id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    ime VARCHAR(255) NOT NULL,
+    priimek VARCHAR(255) NOT NULL,
+    gmail VARCHAR(255) NOT NULL,
+    geslo VARCHAR(255) NOT NULL
+);
+ALTER TABLE
+    PROFESORJI ADD UNIQUE profesorji_gmail_unique(gmail);
+CREATE TABLE RAZRED(
+    razred_id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    oznaka VARCHAR(255) NOT NULL,
+    smer VARCHAR(255) NOT NULL,
+    profesor_id INT NOT NULL
+);
+CREATE TABLE PREDMET(
+    predmet_id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    ime_predmeta VARCHAR(255) NOT NULL
+);
+CREATE TABLE ocena(
+    ocena_id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    id_dijaka INT NOT NULL,
+    predmet_id INT NOT NULL,
+    vrednost INT NOT NULL,
+    datum DATETIME NOT NULL
+);
+CREATE TABLE domača_naloga(
+    naloga_id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    predmet_id INT NOT NULL,
+    navodila TEXT NOT NULL,
+    datum_objave DATETIME NOT NULL,
+    rok DATETIME NOT NULL
+);
+CREATE TABLE oddaja_naloge(
+    oddaja_id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    naloga_id INT NOT NULL,
+    id_dijaka INT NOT NULL,
+    datum_objave DATETIME NOT NULL,
+    datoteka_link VARCHAR(255) NOT NULL
+);
+CREATE TABLE PROFESOR_PREDMET(
+    profesor_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    predmet_id BIGINT NOT NULL,
+    PRIMARY KEY(predmet_id)
+);
+ALTER TABLE
+    RAZRED ADD CONSTRAINT razred_profesor_id_foreign FOREIGN KEY(profesor_id) REFERENCES PROFESORJI(profesor_id);
+ALTER TABLE
+    domača_naloga ADD CONSTRAINT domača_naloga_predmet_id_foreign FOREIGN KEY(predmet_id) REFERENCES PREDMET(predmet_id);
+ALTER TABLE
+    PROFESOR_PREDMET ADD CONSTRAINT profesor_predmet_profesor_id_foreign FOREIGN KEY(profesor_id) REFERENCES PROFESORJI(profesor_id);
+ALTER TABLE
+    PROFESOR_PREDMET ADD CONSTRAINT profesor_predmet_predmet_id_foreign FOREIGN KEY(predmet_id) REFERENCES PREDMET(predmet_id);
+ALTER TABLE
+    DIJAKI ADD CONSTRAINT dijaki_ime_dijaka_foreign FOREIGN KEY(ime_dijaka) REFERENCES ocena(id_dijaka);
+ALTER TABLE
+    DIJAKI ADD CONSTRAINT dijaki_razred_id_foreign FOREIGN KEY(razred_id) REFERENCES RAZRED(razred_id);
+ALTER TABLE
+    ocena ADD CONSTRAINT ocena_predmet_id_foreign FOREIGN KEY(predmet_id) REFERENCES PREDMET(predmet_id);
+ALTER TABLE
+    oddaja_naloge ADD CONSTRAINT oddaja_naloge_id_dijaka_foreign FOREIGN KEY(id_dijaka) REFERENCES DIJAKI(id_dijaka);
+ALTER TABLE
+    oddaja_naloge ADD CONSTRAINT oddaja_naloge_naloga_id_foreign FOREIGN KEY(naloga_id) REFERENCES domača_naloga(naloga_id);
+
+
+
+
+ALTER TABLE DIJAKI
+ADD CONSTRAINT dijaki_gmail_unique UNIQUE (gmail);
+CREATE TABLE PROFESORJI (
+profesor_id SERIAL PRIMARY KEY,
+ime VARCHAR(255) NOT NULL,
+priimek VARCHAR(255) NOT NULL,
+gmail VARCHAR(255) NOT NULL,
+geslo VARCHAR(255) NOT NULL
+);
+ALTER TABLE PROFESORJI
+ADD CONSTRAINT profesorji_gmail_unique UNIQUE (gmail);
+CREATE TABLE RAZRED (
+razred_id SERIAL PRIMARY KEY,
+oznaka VARCHAR(255) NOT NULL,
+smer VARCHAR(255) NOT NULL,
+profesor_id INT NOT NULL
+);
+CREATE TABLE PREDMET (
+predmet_id SERIAL PRIMARY KEY,
+ime_predmeta VARCHAR(255) NOT NULL
+);
+CREATE TABLE ocena (
+ocena_id SERIAL PRIMARY KEY,
+id_dijaka INT NOT NULL,
+predmet_id INT NOT NULL,
+vrednost INT NOT NULL,
+datum TIMESTAMP NOT NULL
+);
+CREATE TABLE domača_naloga (
+naloga_id SERIAL PRIMARY KEY,
+predmet_id INT NOT NULL,
+navodila TEXT NOT NULL,
+datum_objave TIMESTAMP NOT NULL,
+rok TIMESTAMP NOT NULL
+);
+CREATE TABLE oddaja_naloge (
+oddaja_id SERIAL PRIMARY KEY,
+naloga_id INT NOT NULL,
+id_dijaka INT NOT NULL,
+datum_objave TIMESTAMP NOT NULL,
+datoteka_link VARCHAR(255) NOT NULL
+);
+CREATE TABLE PROFESOR_PREDMET (
+profesor_id BIGINT NOT NULL,
+predmet_id BIGINT NOT NULL,
+PRIMARY KEY (predmet_id)
+);
+ALTER TABLE RAZRED
+ADD CONSTRAINT razred_profesor_id_foreign FOREIGN KEY (profesor_id) REFERENCES PROFESORJI (profesor_id);
+ALTER TABLE domača_naloga
+ADD CONSTRAINT domača_naloga_predmet_id_foreign FOREIGN KEY (predmet_id) REFERENCES PREDMET (predmet_id);
+ALTER TABLE PROFESOR_PREDMET
+ADD CONSTRAINT profesor_predmet_profesor_id_foreign FOREIGN KEY (profesor_id) REFERENCES PROFESORJI (profesor_id);
+ALTER TABLE PROFESOR_PREDMET
+ADD CONSTRAINT profesor_predmet_predmet_id_foreign FOREIGN KEY (predmet_id) REFERENCES PREDMET (predmet_id);
+ALTER TABLE DIJAKI
+ADD CONSTRAINT dijaki_razred_id_foreign FOREIGN KEY (razred_id) REFERENCES RAZRED (razred_id);
+ALTER TABLE ocena
+ADD CONSTRAINT ocena_predmet_id_foreign FOREIGN KEY (predmet_id) REFERENCES PREDMET (predmet_id);
+ALTER TABLE oddaja_naloge
+ADD CONSTRAINT oddaja_naloge_id_dijaka_foreign FOREIGN KEY (id_dijaka) REFERENCES DIJAKI (id_dijaka);
+ALTER TABLE oddaja_naloge
+ADD CONSTRAINT oddaja_naloge_naloga_id_foreign FOREIGN KEY (naloga_id) REFERENCES domača_naloga (naloga_id);
