@@ -139,3 +139,5 @@ ALTER TABLE oddaja_naloge
 ADD CONSTRAINT oddaja_naloge_id_dijaka_foreign FOREIGN KEY (id_dijaka) REFERENCES DIJAKI (id_dijaka);
 ALTER TABLE oddaja_naloge
 ADD CONSTRAINT oddaja_naloge_naloga_id_foreign FOREIGN KEY (naloga_id) REFERENCES domača_naloga (naloga_id);
+ALTER TABLE DIJAKI
+ADD COLUMN geslo VARCHAR(50);
