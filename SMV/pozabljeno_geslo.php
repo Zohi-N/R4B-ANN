@@ -94,7 +94,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     
                     // Preusmeri na prijavo s sporočilom
                     $_SESSION['sporocilo_uspeha'] = 'Geslo je bilo uspešno spremenjeno! Prijavite se s novim geslom.';
-                    header('Location: PRIJAVA.php?status=ok');
+                    header('Location: prijava.php?status=ok');
                     exit;
                 } else {
                     $napaka = 'Napaka pri spremembi gesla. Poskusite ponovno.';
@@ -239,7 +239,7 @@ $prikaziUspehu = isset($_GET['status']) && $_GET['status'] === 'ok' && isset($_S
         <h3>✓ Geslo uspešno spremenjeno!</h3>
         <p><?php echo htmlspecialchars($_SESSION['sporocilo_uspeha']); ?></p>
       </div>
-      <button onclick="window.location.href='PRIJAVA.php'">Pojdi na prijavo</button>
+      <button onclick="window.location.href='prijava.php'">Pojdi na prijavo</button>
       <?php unset($_SESSION['sporocilo_uspeha']); ?>
     
     <?php elseif ($prikaziFormoGesla): ?>
@@ -280,7 +280,7 @@ $prikaziUspehu = isset($_GET['status']) && $_GET['status'] === 'ok' && isset($_S
         <input type="hidden" name="akcija" value="preveri_email">
         
         <div class="povratnica">
-          <a href="PRIJAVA.php">Nazaj na prijavo</a>
+          <a href="prijava.php">Nazaj na prijavo</a>
         </div>
       </form>
     <?php endif; ?>
