@@ -25,7 +25,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['priimek'] = $profesor['priimek'];
                 $_SESSION['email'] = $email;
                 
-                header('Location: main page.php');
+                header('Location: main_page.php');
                 exit;
             }
             
@@ -43,7 +43,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['razred_id'] = $dijak['razred_id'];
                 $_SESSION['email'] = $email;
                 
-                header('Location: main page.php');
+                header('Location: main_page.php');
                 exit;
             }
             
@@ -186,4 +186,4 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   </div>
 
 </body>
-</html>
+</html>a
