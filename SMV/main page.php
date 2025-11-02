@@ -1,3 +1,20 @@
+<?php
+session_start();
+
+// Preveri, ali je uporabnik prijavljen
+if (!isset($_SESSION['uporabnik_id']) || !isset($_SESSION['uporabnik_tip'])) {
+    header('Location: prijava.php');
+    exit;
+}
+
+// Pridobi podatke uporabnika iz seje
+$ime = $_SESSION['ime'] ?? 'Uporabnik';
+$priimek = $_SESSION['priimek'] ?? '';
+$uporabnik_tip = $_SESSION['uporabnik_tip'];
+
+// Prva črka imena za avatar
+$prva_crka = mb_strtoupper(mb_substr($ime, 0, 1));
+?>
 <!DOCTYPE html>
 <html lang="sl">
 <head>
@@ -50,15 +67,20 @@
       font-weight: bold;
       font-size: 18px;
       cursor: pointer;
+      transition: transform 0.2s;
+    }
+
+    .avatar-link:hover {
+      transform: scale(1.05);
     }
 
     /* Meni za odjavo – centriran POD AVATARJEM */
     #odjava-menu {
       display: none;
       position: absolute;
-      top: 100%; /* neposredno pod avatarjem */
+      top: 100%;
       left: 50%;
-      transform: translateX(-50%); /* centriranje glede na avatar */
+      transform: translateX(-50%);
       background: white;
       color: #333;
       padding: 8px 16px;
@@ -68,8 +90,14 @@
       text-decoration: none;
       text-align: center;
       white-space: nowrap;
-      margin-top: 8px; /* majhen razmik */
+      margin-top: 8px;
       z-index: 10;
+      transition: opacity 0.2s;
+    }
+
+    #odjava-menu:hover {
+      background: #f5f5f5;
+      color: #8884FF;
     }
 
     .vsebina {
@@ -85,15 +113,22 @@
       font-weight: 600;
     }
 
+    .pozdrav .ime-uporabnika {
+      color: #8884FF;
+    }
+
     .vrsta {
       display: flex;
       flex-wrap: wrap;
       justify-content: space-between;
       gap: 30px;
+      max-width: 1200px;
+      margin: 0 auto;
     }
 
     .gumb {
       width: calc(33.333% - 20px);
+      min-width: 250px;
       height: 170px;
       background: white;
       border-radius: 18px;
@@ -125,6 +160,20 @@
       box-shadow: 0 -2px 6px rgba(0,0,0,0.08);
       margin-top: auto;
     }
+
+    @media (max-width: 768px) {
+      .gumb {
+        width: 100%;
+      }
+      
+      .vsebina {
+        padding: 20px;
+      }
+      
+      .pozdrav {
+        font-size: 20px;
+      }
+    }
   </style>
 </head>
 <body>
@@ -132,23 +181,35 @@
   <div class="header">
     <h1>E-Ocene</h1>
     
-
     <div class="avatar-container">
-      <div class="avatar-link" id="avatar">M</div>
-      <a href="prijava.php" id="odjava-menu">Odjava</a>
+      <div class="avatar-link" id="avatar"><?php echo htmlspecialchars($prva_crka); ?></div>
+      <a href="odjava.php" id="odjava-menu">Odjava</a>
     </div>
   </div>
 
   <div class="vsebina">
-    <div class="pozdrav">Dobrodošli nazaj, Matej!</div>
+    <div class="pozdrav">
+      Dobrodošli nazaj, <span class="ime-uporabnika"><?php echo htmlspecialchars($ime); ?></span>!
+    </div>
 
     <div class="vrsta">
-      <a href="ocene.html" class="gumb">Ocene</a>
-      <a href="testi.html" class="gumb">Testi</a>
-      <a href="izostanki.html" class="gumb">Izostanki</a>
-      <a href="domace_naloge.html" class="gumb">Domače naloge</a>
-      <a href="projekti.html" class="gumb">Projekti</a>
-      <a href="obvestila.html" class="gumb">Obvestila</a>
+      <?php if ($uporabnik_tip === 'dijak'): ?>
+
+        <a href="ocene.php" class="gumb">Ocene</a>
+        <a href="testi.php" class="gumb">Testi</a>
+        <a href="izostanki.php" class="gumb">Izostanki</a>
+        <a href="domace_naloge.php" class="gumb">Domače naloge</a>
+        <a href="projekti.php" class="gumb">Projekti</a>
+        <a href="obvestila.php" class="gumb">Obvestila</a>
+      <?php elseif ($uporabnik_tip === 'profesor'): ?>
+
+        <a href="ocene_vnos.php" class="gumb">Vnos ocen</a>
+        <a href="dijaki_pregled.php" class="gumb">Dijaki</a>
+        <a href="domace_naloge_vnos.php" class="gumb">Domače naloge</a>
+        <a href="razredi.php" class="gumb">Razredi</a>
+        <a href="predmeti.php" class="gumb">Predmeti</a>
+        <a href="obvestila_vnos.php" class="gumb">Obvestila</a>
+      <?php endif; ?>
     </div>
   </div>
 

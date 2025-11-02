@@ -3,7 +3,6 @@ session_start();
 require_once 'database.php';
 
 $napaka = '';
-$uspeh = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $ime = trim($_POST['ime_reg'] ?? '');
@@ -13,7 +12,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $geslo = $_POST['geslo_reg'] ?? '';
     $geslo2 = $_POST['geslo2_reg'] ?? '';
     
-    // Validacija
     if (empty($ime) || empty($priimek) || empty($email) || empty($razred) || empty($geslo)) {
         $napaka = 'Vsa polja so obvezna.';
     } elseif ($geslo !== $geslo2) {
@@ -24,22 +22,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $napaka = 'Neveljaven e-poštni naslov.';
     } else {
         try {
-            // Hash gesla
             $hashed_geslo = password_hash($geslo, PASSWORD_DEFAULT);
-            
-            // Preveri tip uporabnika glede na razred
             $razred_lower = strtolower($razred);
             
             if ($razred_lower === 'profesor') {
-                // REGISTRACIJA PROFESORJA
-                
-                // Preveri, če email že obstaja
                 $stmt = $pdo->prepare("SELECT profesor_id FROM profesorji WHERE gmail = :email");
                 $stmt->execute(['email' => $email]);
                 if ($stmt->fetch()) {
                     $napaka = 'Ta e-poštni naslov je že registriran.';
                 } else {
-                    // Vstavi profesorja
                     $stmt = $pdo->prepare("INSERT INTO profesorji (ime, priimek, gmail, geslo) VALUES (:ime, :priimek, :email, :geslo)");
                     $stmt->execute([
                         'ime' => $ime,
@@ -47,19 +38,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'email' => $email,
                         'geslo' => $hashed_geslo
                     ]);
-                    $uspeh = 'Uspešno ste se registrirali kot profesor!';
+                    $_SESSION['registracija_uspesna'] = 'Uspešno ste se registrirali kot profesor! Prijavite se.';
+                    header('Location: prijava.php');
+                    exit;
                 }
                 
             } elseif ($razred_lower === 'admin') {
-                // REGISTRACIJA ADMINA (lahko tudi v posebno tabelo ali z flag-om)
-                
-                // Preveri, če email že obstaja
                 $stmt = $pdo->prepare("SELECT profesor_id FROM profesorji WHERE gmail = :email");
                 $stmt->execute(['email' => $email]);
                 if ($stmt->fetch()) {
                     $napaka = 'Ta e-poštni naslov je že registriran.';
                 } else {
-                    // Vstavi admina kot profesorja (lahko dodaš flag za razlikovanje)
                     $stmt = $pdo->prepare("INSERT INTO profesorji (ime, priimek, gmail, geslo) VALUES (:ime, :priimek, :email, :geslo)");
                     $stmt->execute([
                         'ime' => $ime,
@@ -67,19 +56,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'email' => $email,
                         'geslo' => $hashed_geslo
                     ]);
-                    $uspeh = 'Uspešno ste se registrirali kot administrator!';
+                    $_SESSION['registracija_uspesna'] = 'Uspešno ste se registrirali kot administrator! Prijavite se.';
+                    header('Location: prijava.php');
+                    exit;
                 }
                 
             } elseif (preg_match('/^[REre][1-4][abcABC]$/', $razred)) {
-                // REGISTRACIJA DIJAKA (format: R1A, E4B, itd.)
-                
-                // Preveri, če email že obstaja
                 $stmt = $pdo->prepare("SELECT id_dijaka FROM dijaki WHERE gmail = :email");
                 $stmt->execute(['email' => $email]);
                 if ($stmt->fetch()) {
                     $napaka = 'Ta e-poštni naslov je že registriran.';
                 } else {
-                    // Poskusi najti razred v bazi
                     $razred_upper = strtoupper($razred);
                     $stmt = $pdo->prepare("SELECT razred_id FROM razred WHERE UPPER(oznaka) = :oznaka");
                     $stmt->execute(['oznaka' => $razred_upper]);
@@ -88,16 +75,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if (!$razred_data) {
                         $napaka = "Razred {$razred} ne obstaja v sistemu. Kontaktirajte administratorja.";
                     } else {
-                        // Generiraj ID dijaka (ali uporabi AUTO_INCREMENT če imaš SERIAL)
-                        $stmt = $pdo->prepare("SELECT COALESCE(MAX(id_dijaka), 0) + 1 as next_id FROM dijaki");
-                        $stmt->execute();
-                        $next_id = $stmt->fetch(PDO::FETCH_ASSOC)['next_id'];
-                        
-                        // Vstavi dijaka
-                        $stmt = $pdo->prepare("INSERT INTO dijaki (id_dijaka, ime_dijaka, priimek_dijaka, razred, gmail, geslo, razred_id) 
-                                               VALUES (:id, :ime, :priimek, :razred, :email, :geslo, :razred_id)");
+                        $stmt = $pdo->prepare("INSERT INTO dijaki (ime_dijaka, priimek_dijaka, razred, gmail, geslo, razred_id) 
+                                               VALUES (:ime, :priimek, :razred, :email, :geslo, :razred_id)");
                         $stmt->execute([
-                            'id' => $next_id,
                             'ime' => $ime,
                             'priimek' => $priimek,
                             'razred' => $razred_upper,
@@ -105,7 +85,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             'geslo' => $hashed_geslo,
                             'razred_id' => $razred_data['razred_id']
                         ]);
-                        $uspeh = 'Uspešno ste se registrirali kot dijak!';
+                        $_SESSION['registracija_uspesna'] = 'Uspešno ste se registrirali kot dijak! Prijavite se.';
+                        header('Location: prijava.php');
+                        exit;
                     }
                 }
                 
@@ -148,6 +130,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       border-radius: 30px;
       text-decoration: none;
       font-weight: bold;
+    }
+
+    .gumb:hover {
+      background: #f0f0f0;
     }
 
     .okno {
@@ -208,17 +194,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       border-left: 4px solid #d32f2f;
     }
 
-    .uspeh {
-      color: #2e7d32;
-      font-size: 14px;
-      text-align: center;
-      margin-top: 10px;
-      padding: 10px;
-      background: #e6ffe6;
-      border-radius: 5px;
-      border-left: 4px solid #2e7d32;
-    }
-
     .info {
       font-size: 12px;
       color: #666;
@@ -244,10 +219,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
       <?php if ($napaka): ?>
         <div class="napaka"><?php echo htmlspecialchars($napaka); ?></div>
-      <?php endif; ?>
-
-      <?php if ($uspeh): ?>
-        <div class="uspeh"><?php echo htmlspecialchars($uspeh); ?> <a href="prijava.php">Prijavi se</a></div>
       <?php endif; ?>
 
       <input type="text" name="ime_reg" placeholder="Ime" required value="<?php echo htmlspecialchars($_POST['ime_reg'] ?? ''); ?>">

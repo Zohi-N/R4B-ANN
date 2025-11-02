@@ -25,7 +25,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['priimek'] = $profesor['priimek'];
                 $_SESSION['email'] = $email;
                 
-                header('Location: profesor_nadzorna_plosca.php');
+                header('Location: main page.php');
                 exit;
             }
             
@@ -43,7 +43,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['razred_id'] = $dijak['razred_id'];
                 $_SESSION['email'] = $email;
                 
-                header('Location: dijak_nadzorna_plosca.php');
+                header('Location: main page.php');
                 exit;
             }
             
@@ -84,6 +84,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       border-radius: 30px;
       text-decoration: none;
       font-weight: bold;
+    }
+
+    .gumb:hover {
+      background: #f0f0f0;
     }
 
     .okno {
