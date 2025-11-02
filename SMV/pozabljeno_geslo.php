@@ -26,7 +26,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $prikaziFormoGesla = true;
                     $email_za_reset = $email;
                     $_SESSION['reset_email'] = $email;
-                    $uspeh = 'E-pošta je bila najdena. Vnesite novo geslo.';
                 } else {
                     // Preverimo ali obstaja dijak
                     $stmt = $pdo->prepare("SELECT id_dijaka FROM dijaki WHERE gmail = :email");
@@ -37,7 +36,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $prikaziFormoGesla = true;
                         $email_za_reset = $email;
                         $_SESSION['reset_email'] = $email;
-                        $uspeh = 'E-pošta je bila najdena. Vnesite novo geslo.';
                     } else {
                         $napaka = 'Ta e-pošta ni registrirana v sistemu.';
                     }
@@ -52,18 +50,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // KORAK 2: Sprememba gesla
     if (isset($_POST['akcija']) && $_POST['akcija'] === 'sprememba') {
         $email = $_SESSION['reset_email'] ?? '';
-        $staro_geslo = $_POST['staro_geslo'] ?? '';
         $novo_geslo = $_POST['novo_geslo'] ?? '';
         $ponovljeno_geslo = $_POST['ponovljeno_geslo'] ?? '';
         
         if (empty($email)) {
             $napaka = 'Napaka - e-pošta ni bila najdena. Poskusite ponovno.';
             $prikaziFormoGesla = false;
-        } elseif (empty($staro_geslo)) {
-            $napaka = 'Vnesite staro geslo.';
-            $prikaziFormoGesla = true;
-            $email_za_reset = $email;
-            $_SESSION['reset_email'] = $email;
         } elseif (empty($novo_geslo) || empty($ponovljeno_geslo)) {
             $napaka = 'Vnesite novo geslo.';
             $prikaziFormoGesla = true;
@@ -81,61 +73,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['reset_email'] = $email;
         } else {
             try {
-                // Najprej preverimo staro geslo pri profesorjih
-                $stmt = $pdo->prepare("SELECT geslo FROM profesorji WHERE gmail = :email");
-                $stmt->execute(['email' => $email]);
-                $profesor = $stmt->fetch(PDO::FETCH_ASSOC);
+                $hashovano_geslo = password_hash($novo_geslo, PASSWORD_DEFAULT);
                 
-                $geslo_preverjeno = false;
+                // Poskusi update pri profesorjih
+                $stmt = $pdo->prepare("UPDATE profesorji SET geslo = :geslo WHERE gmail = :email");
+                $stmt->execute(['geslo' => $hashovano_geslo, 'email' => $email]);
                 
-                if ($profesor && password_verify($staro_geslo, $profesor['geslo'])) {
-                    $geslo_preverjeno = true;
-                } else {
-                    // Preverimo staro geslo pri dijakih
-                    $stmt = $pdo->prepare("SELECT geslo FROM dijaki WHERE gmail = :email");
-                    $stmt->execute(['email' => $email]);
-                    $dijak = $stmt->fetch(PDO::FETCH_ASSOC);
-                    
-                    if ($dijak && password_verify($staro_geslo, $dijak['geslo'])) {
-                        $geslo_preverjeno = true;
-                    }
+                $redkov_posodobljenih = $stmt->rowCount();
+                
+                if ($redkov_posodobljenih === 0) {
+                    // Poskusi update pri dijakih
+                    $stmt = $pdo->prepare("UPDATE dijaki SET geslo = :geslo WHERE gmail = :email");
+                    $stmt->execute(['geslo' => $hashovano_geslo, 'email' => $email]);
+                    $redkov_posodobljenih = $stmt->rowCount();
                 }
                 
-                if (!$geslo_preverjeno) {
-                    $napaka = 'Staro geslo ni pravilno.';
+                if ($redkov_posodobljenih > 0) {
+                    // Čisti sejo
+                    unset($_SESSION['reset_email']);
+                    
+                    // Preusmeri na prijavo s sporočilom
+                    $_SESSION['sporocilo_uspeha'] = 'Geslo je bilo uspešno spremenjeno! Prijavite se s novim geslom.';
+                    header('Location: PRIJAVA.php?status=ok');
+                    exit;
+                } else {
+                    $napaka = 'Napaka pri spremembi gesla. Poskusite ponovno.';
                     $prikaziFormoGesla = true;
                     $email_za_reset = $email;
                     $_SESSION['reset_email'] = $email;
-                } else {
-                    $hashovano_geslo = password_hash($novo_geslo, PASSWORD_DEFAULT);
-                    
-                    // Poskusi update pri profesorjih
-                    $stmt = $pdo->prepare("UPDATE profesorji SET geslo = :geslo WHERE gmail = :email");
-                    $stmt->execute(['geslo' => $hashovano_geslo, 'email' => $email]);
-                    
-                    $redkov_posodobljenih = $stmt->rowCount();
-                    
-                    if ($redkov_posodobljenih === 0) {
-                        // Poskusi update pri dijakih
-                        $stmt = $pdo->prepare("UPDATE dijaki SET geslo = :geslo WHERE gmail = :email");
-                        $stmt->execute(['geslo' => $hashovano_geslo, 'email' => $email]);
-                        $redkov_posodobljenih = $stmt->rowCount();
-                    }
-                    
-                    if ($redkov_posodobljenih > 0) {
-                        // Čisti sejo
-                        unset($_SESSION['reset_email']);
-                        
-                        // Preusmeri na prijavo s sporočilom
-                        $_SESSION['sporocilo_uspeha'] = 'Geslo je bilo uspešno spremenjeno! Prijavite se s novim geslom.';
-                        header('Location: pozabljeno_geslo.php?status=ok');
-                        exit;
-                    } else {
-                        $napaka = 'Napaka pri spremembi gesla. Poskusite ponovno.';
-                        $prikaziFormoGesla = true;
-                        $email_za_reset = $email;
-                        $_SESSION['reset_email'] = $email;
-                    }
                 }
             } catch (PDOException $e) {
                 $napaka = 'Napaka pri spremembi gesla. Poskusite ponovno.';
@@ -166,22 +131,6 @@ $prikaziUspehu = isset($_GET['status']) && $_GET['status'] === 'ok' && isset($_S
       align-items: center;
       justify-content: center;
       font-family: Arial, sans-serif;
-    }
-
-    .gumb {
-      position: absolute;
-      top: 30px;
-      left: 30px;
-      background: white;
-      color: #4361ee;
-      padding: 10px 20px;
-      border-radius: 30px;
-      text-decoration: none;
-      font-weight: bold;
-    }
-
-    .gumb:hover {
-      background: #f0f0f0;
     }
 
     .okno {
@@ -247,17 +196,6 @@ $prikaziUspehu = isset($_GET['status']) && $_GET['status'] === 'ok' && isset($_S
       border-left: 4px solid #d32f2f;
     }
 
-    .uspeh {
-      color: #388e3c;
-      font-size: 14px;
-      text-align: left;
-      margin: 10px 0;
-      padding: 10px;
-      background: #e8f5e9;
-      border-radius: 5px;
-      border-left: 4px solid #388e3c;
-    }
-
     .velika-uspeh {
       background: #e8f5e9;
       padding: 20px;
@@ -278,6 +216,7 @@ $prikaziUspehu = isset($_GET['status']) && $_GET['status'] === 'ok' && isset($_S
 
     .povratnica {
       margin-top: 20px;
+      text-align: center;
     }
 
     .povratnica a {
@@ -289,25 +228,9 @@ $prikaziUspehu = isset($_GET['status']) && $_GET['status'] === 'ok' && isset($_S
     .povratnica a:hover {
       text-decoration: underline;
     }
-
-    .gumb-nazaj {
-      width: auto;
-      padding: 8px 16px;
-      background: #f0f0f0;
-      color: #4361ee;
-      border: 1px solid #ddd;
-      font-size: 14px;
-      margin-top: 15px;
-    }
-
-    .gumb-nazaj:hover {
-      background: #e0e0e0;
-    }
   </style>
 </head>
 <body>
-
-  <a href="PRIJAVA.php" class="gumb">← Nazaj na prijavo</a>
 
   <div class="okno">
     
@@ -327,10 +250,9 @@ $prikaziUspehu = isset($_GET['status']) && $_GET['status'] === 'ok' && isset($_S
           <div class="napaka"><?php echo htmlspecialchars($napaka); ?></div>
         <?php endif; ?>
 
-        <p>Vnesite staro geslo in novo geslo (najmanj 10 znakov):</p>
+        <p>Vnesite novo geslo (najmanj 10 znakov):</p>
         
-        <input type="password" name="staro_geslo" placeholder="Staro geslo" required>
-        <input type="password" name="novo_geslo" placeholder="Novo geslo (min. 10 znakov)" required>
+        <input type="password" name="novo_geslo" placeholder="Novo geslo" required>
         <input type="password" name="ponovljeno_geslo" placeholder="Ponovite novo geslo" required>
 
         <button type="submit">Spremeni geslo</button>
@@ -338,7 +260,7 @@ $prikaziUspehu = isset($_GET['status']) && $_GET['status'] === 'ok' && isset($_S
         <input type="hidden" name="akcija" value="sprememba">
         
         <div class="povratnica">
-          <a href="pozabljeno_geslo.php">← Začni znova</a>
+          <a href="pozabljeno_geslo.php">Nazaj na prejšnji korak</a>
         </div>
       </form>
 
@@ -350,10 +272,6 @@ $prikaziUspehu = isset($_GET['status']) && $_GET['status'] === 'ok' && isset($_S
           <div class="napaka"><?php echo htmlspecialchars($napaka); ?></div>
         <?php endif; ?>
 
-        <?php if ($uspeh): ?>
-          <div class="uspeh"><?php echo htmlspecialchars($uspeh); ?></div>
-        <?php endif; ?>
-
         <p>Vnesite e-pošto vašega računa:</p>
         <input type="email" name="email_reset" placeholder="E-pošta" required>
 
@@ -362,7 +280,7 @@ $prikaziUspehu = isset($_GET['status']) && $_GET['status'] === 'ok' && isset($_S
         <input type="hidden" name="akcija" value="preveri_email">
         
         <div class="povratnica">
-          <a href="PRIJAVA.php">← Nazaj na prijavo</a>
+          <a href="PRIJAVA.php">Nazaj na prijavo</a>
         </div>
       </form>
     <?php endif; ?>
