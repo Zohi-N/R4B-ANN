@@ -12,13 +12,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $napaka = 'Vnesite e-pošto in geslo.';
     } else {
         try {
-            // Najprej preverimo, ali je profesor
+
             $stmt = $pdo->prepare("SELECT profesor_id, ime, priimek, geslo FROM profesorji WHERE gmail = :email");
             $stmt->execute(['email' => $email]);
             $profesor = $stmt->fetch(PDO::FETCH_ASSOC);
             
             if ($profesor && password_verify($geslo, $profesor['geslo'])) {
-                // Uspešna prijava - profesor
+
                 $_SESSION['uporabnik_id'] = $profesor['profesor_id'];
                 $_SESSION['uporabnik_tip'] = 'profesor';
                 $_SESSION['ime'] = $profesor['ime'];
@@ -29,13 +29,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 exit;
             }
             
-            // Če ni profesor, preverimo dijaka
+
             $stmt = $pdo->prepare("SELECT id_dijaka, ime_dijaka, priimek_dijaka, geslo, razred_id FROM dijaki WHERE gmail = :email");
             $stmt->execute(['email' => $email]);
             $dijak = $stmt->fetch(PDO::FETCH_ASSOC);
             
             if ($dijak && password_verify($geslo, $dijak['geslo'])) {
-                // Uspešna prijava - dijak
+
                 $_SESSION['uporabnik_id'] = $dijak['id_dijaka'];
                 $_SESSION['uporabnik_tip'] = 'dijak';
                 $_SESSION['ime'] = $dijak['ime_dijaka'];
@@ -47,7 +47,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 exit;
             }
             
-            // Če nismo našli uporabnika ali je geslo napačno
+
             $napaka = 'Napačna e-pošta ali geslo.';
             
         } catch (PDOException $e) {
@@ -186,4 +186,4 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   </div>
 
 </body>
-</html>a
+</html>
