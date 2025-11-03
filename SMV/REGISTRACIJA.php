@@ -25,69 +25,65 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $hashed_geslo = password_hash($geslo, PASSWORD_DEFAULT);
             $razred_lower = strtolower($razred);
             
-            if ($razred_lower === 'profesor') {
-                $stmt = $pdo->prepare("SELECT profesor_id FROM profesorji WHERE gmail = :email");
-                $stmt->execute(['email' => $email]);
-                if ($stmt->fetch()) {
-                    $napaka = 'Ta e-poštni naslov je že registriran.';
+            // PROFESOR ali ADMIN REGISTRACIJA
+            if ($razred_lower === 'profesor' || $razred_lower === 'admin') {
+                // Preveri če email končuje na @sola.si
+                if (!preg_match('/@sola\.si$/i', $email)) {
+                    $napaka = 'Profesor/Admin mora imeti email končnico @sola.si (npr. ime.priimek@sola.si)';
                 } else {
-                    $stmt = $pdo->prepare("INSERT INTO profesorji (ime, priimek, gmail, geslo) VALUES (:ime, :priimek, :email, :geslo)");
-                    $stmt->execute([
-                        'ime' => $ime,
-                        'priimek' => $priimek,
-                        'email' => $email,
-                        'geslo' => $hashed_geslo
-                    ]);
-                    $_SESSION['registracija_uspesna'] = 'Uspešno ste se registrirali kot profesor! Prijavite se.';
-                    header('Location: prijava.php');
-                    exit;
-                }
-                
-            } elseif ($razred_lower === 'admin') {
-                $stmt = $pdo->prepare("SELECT profesor_id FROM profesorji WHERE gmail = :email");
-                $stmt->execute(['email' => $email]);
-                if ($stmt->fetch()) {
-                    $napaka = 'Ta e-poštni naslov je že registriran.';
-                } else {
-                    $stmt = $pdo->prepare("INSERT INTO profesorji (ime, priimek, gmail, geslo) VALUES (:ime, :priimek, :email, :geslo)");
-                    $stmt->execute([
-                        'ime' => $ime,
-                        'priimek' => $priimek,
-                        'email' => $email,
-                        'geslo' => $hashed_geslo
-                    ]);
-                    $_SESSION['registracija_uspesna'] = 'Uspešno ste se registrirali kot administrator! Prijavite se.';
-                    header('Location: prijava.php');
-                    exit;
-                }
-                
-            } elseif (preg_match('/^[REre][1-4][abcABC]$/', $razred)) {
-                $stmt = $pdo->prepare("SELECT id_dijaka FROM dijaki WHERE gmail = :email");
-                $stmt->execute(['email' => $email]);
-                if ($stmt->fetch()) {
-                    $napaka = 'Ta e-poštni naslov je že registriran.';
-                } else {
-                    $razred_upper = strtoupper($razred);
-                    $stmt = $pdo->prepare("SELECT razred_id FROM razred WHERE UPPER(oznaka) = :oznaka");
-                    $stmt->execute(['oznaka' => $razred_upper]);
-                    $razred_data = $stmt->fetch(PDO::FETCH_ASSOC);
-                    
-                    if (!$razred_data) {
-                        $napaka = "Razred {$razred} ne obstaja v sistemu. Kontaktirajte administratorja.";
+                    $stmt = $pdo->prepare("SELECT profesor_id FROM profesorji WHERE gmail = :email");
+                    $stmt->execute(['email' => $email]);
+                    if ($stmt->fetch()) {
+                        $napaka = 'Ta e-poštni naslov je že registriran.';
                     } else {
-                        $stmt = $pdo->prepare("INSERT INTO dijaki (ime_dijaka, priimek_dijaka, razred, gmail, geslo, razred_id) 
-                                               VALUES (:ime, :priimek, :razred, :email, :geslo, :razred_id)");
+                        $stmt = $pdo->prepare("INSERT INTO profesorji (ime, priimek, gmail, geslo) VALUES (:ime, :priimek, :email, :geslo)");
                         $stmt->execute([
                             'ime' => $ime,
                             'priimek' => $priimek,
-                            'razred' => $razred_upper,
                             'email' => $email,
-                            'geslo' => $hashed_geslo,
-                            'razred_id' => $razred_data['razred_id']
+                            'geslo' => $hashed_geslo
                         ]);
-                        $_SESSION['registracija_uspesna'] = 'Uspešno ste se registrirali kot dijak! Prijavite se.';
+                        
+                        $tip = ($razred_lower === 'admin') ? 'administrator' : 'profesor';
+                        $_SESSION['registracija_uspesna'] = "Uspešno ste se registrirali kot {$tip}! Prijavite se.";
                         header('Location: prijava.php');
                         exit;
+                    }
+                }
+                
+            // DIJAK REGISTRACIJA
+            } elseif (preg_match('/^[REre][1-4][abcABC]$/', $razred)) {
+                // Preveri če email končuje na @dijak.si
+                if (!preg_match('/@dijak\.si$/i', $email)) {
+                    $napaka = 'Dijak mora imeti email končnico @dijak.si (npr. ime.priimek@dijak.si)';
+                } else {
+                    $stmt = $pdo->prepare("SELECT id_dijaka FROM dijaki WHERE gmail = :email");
+                    $stmt->execute(['email' => $email]);
+                    if ($stmt->fetch()) {
+                        $napaka = 'Ta e-poštni naslov je že registriran.';
+                    } else {
+                        $razred_upper = strtoupper($razred);
+                        $stmt = $pdo->prepare("SELECT razred_id FROM razred WHERE UPPER(oznaka) = :oznaka");
+                        $stmt->execute(['oznaka' => $razred_upper]);
+                        $razred_data = $stmt->fetch(PDO::FETCH_ASSOC);
+                        
+                        if (!$razred_data) {
+                            $napaka = "Razred {$razred} ne obstaja v sistemu. Kontaktirajte administratorja.";
+                        } else {
+                            $stmt = $pdo->prepare("INSERT INTO dijaki (ime_dijaka, priimek_dijaka, razred, gmail, geslo, razred_id) 
+                                                   VALUES (:ime, :priimek, :razred, :email, :geslo, :razred_id)");
+                            $stmt->execute([
+                                'ime' => $ime,
+                                'priimek' => $priimek,
+                                'razred' => $razred_upper,
+                                'email' => $email,
+                                'geslo' => $hashed_geslo,
+                                'razred_id' => $razred_data['razred_id']
+                            ]);
+                            $_SESSION['registracija_uspesna'] = 'Uspešno ste se registrirali kot dijak! Prijavite se.';
+                            header('Location: prijava.php');
+                            exit;
+                        }
                     }
                 }
                 
@@ -139,7 +135,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     .okno {
       background: white;
       width: 100%;
-      max-width: 400px;
+      max-width: 450px;
       padding: 40px;
       border-radius: 20px;
       box-shadow: 0 5px 20px rgba(0,0,0,0.2);
@@ -195,17 +191,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     .info {
-      font-size: 12px;
+      font-size: 13px;
       color: #666;
       margin-top: 15px;
-      padding: 10px;
+      padding: 15px;
       background: #f5f5f5;
-      border-radius: 5px;
+      border-radius: 8px;
       text-align: left;
+      line-height: 1.8;
     }
 
     .info strong {
       color: #333;
+      display: block;
+      margin-bottom: 5px;
+    }
+
+    .info code {
+      background: #e0e0e0;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-family: 'Courier New', monospace;
+      color: #d32f2f;
+      font-size: 12px;
+    }
+
+    .email-hint {
+      background: #e3f2fd;
+      padding: 12px;
+      border-radius: 5px;
+      margin-top: 12px;
+      font-size: 12px;
+      color: #1565c0;
+      border-left: 4px solid #2196f3;
+      text-align: left;
     }
   </style>
 </head>
@@ -226,6 +245,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       <input type="text" name="priimek_reg" placeholder="Priimek" required value="<?php echo htmlspecialchars($_POST['priimek_reg'] ?? ''); ?>">
 
       <input type="email" name="email_reg" placeholder="E-pošta" required value="<?php echo htmlspecialchars($_POST['email_reg'] ?? ''); ?>">
+      
+      <div class="email-hint">
+        <strong>📧 Pomembno - Email končnice:</strong><br>
+        • Dijaki: <code>ime.priimek@dijak.si</code><br>
+        • Profesorji: <code>ime.priimek@sola.si</code><br>
+        • Admin: <code>ime.priimek@sola.si</code>
+      </div>
 
       <input type="text" name="razred_reg" placeholder="Razred (npr. R1A, E4C) ali 'profesor' ali 'admin'" required value="<?php echo htmlspecialchars($_POST['razred_reg'] ?? ''); ?>">
 
@@ -236,10 +262,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       <button type="submit">Registriraj se</button>
 
       <div class="info">
-        <strong>Navodila:</strong><br>
-        • <strong>Dijak:</strong> Vnesite razred (npr. R1A, E4B)<br>
-        • <strong>Profesor:</strong> Vnesite "profesor"<br>
-        • <strong>Admin:</strong> Vnesite "admin"
+        <strong>📝 Navodila za razred:</strong>
+        • <strong>Dijak:</strong> Vnesite razred <code>R1A</code>, <code>R2A</code>, <code>E4B</code>...<br>
+        • <strong>Profesor:</strong> Vnesite <code>profesor</code><br>
+        • <strong>Admin:</strong> Vnesite <code>admin</code>
       </div>
     </form>
   </div>

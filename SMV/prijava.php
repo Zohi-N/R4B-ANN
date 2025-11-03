@@ -3,6 +3,13 @@ session_start();
 require_once 'database.php';
 
 $napaka = '';
+$uspeh = '';
+
+// Prikaži sporočilo o uspešni registraciji
+if (isset($_SESSION['registracija_uspesna'])) {
+    $uspeh = $_SESSION['registracija_uspesna'];
+    unset($_SESSION['registracija_uspesna']);
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = trim($_POST['email_prijava'] ?? '');
@@ -12,42 +19,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $napaka = 'Vnesite e-pošto in geslo.';
     } else {
         try {
-
+            // Preveri ali je profesor
             $stmt = $pdo->prepare("SELECT profesor_id, ime, priimek, geslo FROM profesorji WHERE gmail = :email");
             $stmt->execute(['email' => $email]);
             $profesor = $stmt->fetch(PDO::FETCH_ASSOC);
             
             if ($profesor && password_verify($geslo, $profesor['geslo'])) {
-
+                // Prijava profesorja
                 $_SESSION['uporabnik_id'] = $profesor['profesor_id'];
                 $_SESSION['uporabnik_tip'] = 'profesor';
                 $_SESSION['ime'] = $profesor['ime'];
                 $_SESSION['priimek'] = $profesor['priimek'];
                 $_SESSION['email'] = $email;
                 
+                // Preveri če je admin
+                if (strpos($email, 'admin@') !== false || $email === 'admin@sola.si') {
+                    $_SESSION['uporabnik_tip'] = 'admin';
+                }
+                
                 header('Location: main_page.php');
                 exit;
             }
             
-
-            $stmt = $pdo->prepare("SELECT id_dijaka, ime_dijaka, priimek_dijaka, geslo, razred_id FROM dijaki WHERE gmail = :email");
+            // Preveri ali je dijak
+            $stmt = $pdo->prepare("SELECT id_dijaka, ime_dijaka, priimek_dijaka, geslo, razred_id, razred FROM dijaki WHERE gmail = :email");
             $stmt->execute(['email' => $email]);
             $dijak = $stmt->fetch(PDO::FETCH_ASSOC);
             
             if ($dijak && password_verify($geslo, $dijak['geslo'])) {
-
+                // Prijava dijaka
                 $_SESSION['uporabnik_id'] = $dijak['id_dijaka'];
                 $_SESSION['uporabnik_tip'] = 'dijak';
                 $_SESSION['ime'] = $dijak['ime_dijaka'];
                 $_SESSION['priimek'] = $dijak['priimek_dijaka'];
                 $_SESSION['razred_id'] = $dijak['razred_id'];
+                $_SESSION['razred'] = $dijak['razred'];
                 $_SESSION['email'] = $email;
                 
                 header('Location: main_page.php');
                 exit;
             }
             
-
+            // Če ni najden noben uporabnik
             $napaka = 'Napačna e-pošta ali geslo.';
             
         } catch (PDOException $e) {
@@ -67,11 +80,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     body {
       margin: 0;
       background: linear-gradient(135deg, #8884FF, #AB64D6);
-      height: 100vh;
+      min-height: 100vh;
       display: flex;
       align-items: center;
       justify-content: center;
       font-family: Arial, sans-serif;
+      padding: 20px;
     }
 
     .gumb {
@@ -92,7 +106,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     .okno {
       background: white;
-      width: 400px;
+      width: 100%;
+      max-width: 400px;
       padding: 40px;
       border-radius: 20px;
       box-shadow: 0 5px 20px rgba(0,0,0,0.2);
@@ -140,11 +155,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       color: #d32f2f;
       font-size: 14px;
       text-align: left;
-      margin-top: 10px;
-      padding: 10px;
+      margin-bottom: 15px;
+      padding: 12px;
       background: #ffe6e6;
       border-radius: 5px;
       border-left: 4px solid #d32f2f;
+    }
+
+    .uspeh {
+      color: #2e7d32;
+      font-size: 14px;
+      text-align: center;
+      margin-bottom: 15px;
+      padding: 12px;
+      background: #e8f5e9;
+      border-radius: 5px;
+      border-left: 4px solid #4caf50;
+      line-height: 1.6;
     }
 
     .ste_pozabiligeslo {
@@ -170,11 +197,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <form method="POST" action="">
       <h2>Prijava</h2>
       
+      <?php if ($uspeh): ?>
+        <div class="uspeh"><?php echo $uspeh; ?></div>
+      <?php endif; ?>
+
       <?php if ($napaka): ?>
         <div class="napaka"><?php echo htmlspecialchars($napaka); ?></div>
       <?php endif; ?>
 
-      <input type="email" name="email_prijava" placeholder="E-pošta" required>
+      <input type="email" name="email_prijava" placeholder="E-pošta" required value="<?php echo htmlspecialchars($_POST['email_prijava'] ?? ''); ?>">
       <input type="password" name="geslo_prijava" placeholder="Geslo" required>
 
       <button type="submit">Prijavi se</button>
