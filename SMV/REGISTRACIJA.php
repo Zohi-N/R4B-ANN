@@ -21,7 +21,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $napaka = 'Neveljaven e-poštni naslov.';
     } else {
-        // Preveri dovoljene email domene
         $email_parts = explode('@', $email);
         $domena = strtolower($email_parts[1] ?? '');
         
@@ -34,17 +33,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $razred_lower = strtolower($razred);
                 
                 if ($razred_lower === 'profesor') {
-                    // Preveri če email obstaja
                     $stmt = $pdo->prepare("SELECT profesor_id FROM profesorji WHERE gmail = :email");
                     $stmt->execute(['email' => $email]);
                     if ($stmt->fetch()) {
                         $napaka = 'Ta e-poštni naslov je že registriran.';
                     } else {
-                        // Začni transakcijo
                         $pdo->beginTransaction();
                         
                         try {
-                            // Vstavi profesorja
                             $stmt = $pdo->prepare("INSERT INTO profesorji (ime, priimek, gmail, geslo) VALUES (:ime, :priimek, :email, :geslo)");
                             $stmt->execute([
                                 'ime' => $ime,
@@ -55,15 +51,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             
                             $novi_profesor_id = $pdo->lastInsertId();
                             
-                            // RANDOM DODELITEV PREDMETOV PROFESORJU
                             $vsi_predmeti = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
-                            
-                            // Random izberi 2-4 predmete za profesorja
                             $st_predmetov = rand(2, 4);
                             shuffle($vsi_predmeti);
                             $izbrani_predmeti = array_slice($vsi_predmeti, 0, $st_predmetov);
                             
-                            // Vstavi predmete v profesor_predmet tabelo
                             $insert_predmet = $pdo->prepare("INSERT INTO profesor_predmet (profesor_id, predmet_id) VALUES (:profesor_id, :predmet_id)");
                             
                             foreach ($izbrani_predmeti as $predmet_id) {
@@ -73,7 +65,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 ]);
                             }
                             
-                            // Pridobi imena dodeljenih predmetov
                             $placeholders = implode(',', array_fill(0, count($izbrani_predmeti), '?'));
                             $stmt = $pdo->prepare("SELECT ime_predmeta FROM predmet WHERE predmet_id IN ($placeholders)");
                             $stmt->execute($izbrani_predmeti);
@@ -93,7 +84,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                     
                 } elseif (preg_match('/^[REre][1-4][abcABC]$/', $razred)) {
-                    // Preveri če email obstaja
                     $stmt = $pdo->prepare("SELECT id_dijaka FROM dijaki WHERE gmail = :email");
                     $stmt->execute(['email' => $email]);
                     if ($stmt->fetch()) {
@@ -107,65 +97,72 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         if (!$razred_data) {
                             $napaka = "Razred {$razred} ne obstaja v sistemu. Kontaktirajte administratorja.";
                         } else {
-                            // Začni transakcijo
-                            $pdo->beginTransaction();
+                            // DOLOČI PREDMETE GLEDE NA RAZRED
+                            $predmeti_po_razredu = [
+                                'R1A' => ['Matematika', 'Slovenščina', 'Angleščina', 'Računalništvo', 'Fizika'],
+                                'R2A' => ['Matematika', 'Slovenščina', 'Angleščina', 'Računalništvo', 'Zgodovina', 'Kemija'],
+                                'R3A' => ['Matematika', 'Slovenščina', 'Angleščina', 'Računalništvo', 'Geografija', 'Biologija'],
+                                'R4A' => ['Matematika', 'Slovenščina', 'Angleščina', 'Računalništvo', 'Fizika', 'Zgodovina'],
+                                'E1A' => ['Matematika', 'Slovenščina', 'Angleščina', 'Fizika', 'Računalništvo'],
+                                'E2A' => ['Matematika', 'Slovenščina', 'Angleščina', 'Fizika', 'Kemija', 'Računalništvo'],
+                                'E3A' => ['Matematika', 'Slovenščina', 'Angleščina', 'Fizika', 'Geografija', 'Računalništvo'],
+                                'E4A' => ['Matematika', 'Slovenščina', 'Angleščina', 'Fizika', 'Zgodovina', 'Računalništvo']
+                            ];
                             
-                            try {
-                                // Vstavi dijaka
-                                $stmt = $pdo->prepare("INSERT INTO dijaki (ime_dijaka, priimek_dijaka, razred, gmail, geslo, razred_id) 
-                                                       VALUES (:ime, :priimek, :razred, :email, :geslo, :razred_id)");
-                                $stmt->execute([
-                                    'ime' => $ime,
-                                    'priimek' => $priimek,
-                                    'razred' => $razred_upper,
-                                    'email' => $email,
-                                    'geslo' => $hashed_geslo,
-                                    'razred_id' => $razred_data['razred_id']
-                                ]);
+                            $predmeti_za_razred = $predmeti_po_razredu[$razred_upper] ?? [];
+                            
+                            if (empty($predmeti_za_razred)) {
+                                $napaka = "Razred {$razred_upper} nima definiranih predmetov.";
+                            } else {
+                                $pdo->beginTransaction();
                                 
-                                $novi_dijak_id = $pdo->lastInsertId();
-                                
-                                // RANDOM DODELITEV PREDMETOV
-                                $vsi_predmeti = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
-                                
-                                // Random izberi 4-7 predmetov
-                                $st_predmetov = rand(4, 7);
-                                shuffle($vsi_predmeti);
-                                $izbrani_predmeti = array_slice($vsi_predmeti, 0, $st_predmetov);
-                                
-                                // Vstavi predmete v dijak_predmet tabelo
-                                $insert_predmet = $pdo->prepare("INSERT INTO dijak_predmet (id_dijaka, predmet_id) VALUES (:dijak_id, :predmet_id)");
-                                
-                                foreach ($izbrani_predmeti as $predmet_id) {
-                                    $insert_predmet->execute([
-                                        'dijak_id' => $novi_dijak_id,
-                                        'predmet_id' => $predmet_id
+                                try {
+                                    $stmt = $pdo->prepare("INSERT INTO dijaki (ime_dijaka, priimek_dijaka, razred, gmail, geslo, razred_id) 
+                                                           VALUES (:ime, :priimek, :razred, :email, :geslo, :razred_id)");
+                                    $stmt->execute([
+                                        'ime' => $ime,
+                                        'priimek' => $priimek,
+                                        'razred' => $razred_upper,
+                                        'email' => $email,
+                                        'geslo' => $hashed_geslo,
+                                        'razred_id' => $razred_data['razred_id']
                                     ]);
+                                    
+                                    $novi_dijak_id = $pdo->lastInsertId();
+                                    
+                                    // Pridobi ID-je predmetov
+                                    $placeholders = implode(',', array_fill(0, count($predmeti_za_razred), '?'));
+                                    $stmt = $pdo->prepare("SELECT predmet_id, ime_predmeta FROM predmet WHERE ime_predmeta IN ($placeholders)");
+                                    $stmt->execute($predmeti_za_razred);
+                                    $predmeti = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                                    
+                                    $insert_predmet = $pdo->prepare("INSERT INTO dijak_predmet (id_dijaka, predmet_id) VALUES (:dijak_id, :predmet_id)");
+                                    
+                                    foreach ($predmeti as $predmet) {
+                                        $insert_predmet->execute([
+                                            'dijak_id' => $novi_dijak_id,
+                                            'predmet_id' => $predmet['predmet_id']
+                                        ]);
+                                    }
+                                    
+                                    $pdo->commit();
+                                    
+                                    $seznam_predmetov = implode(', ', array_column($predmeti, 'ime_predmeta'));
+                                    $st_predmetov = count($predmeti);
+                                    $_SESSION['registracija_uspesna'] = 'Uspešno ste se registrirali kot dijak!<br>Razred <strong>' . $razred_upper . '</strong> ima ' . $st_predmetov . ' predmetov:<br><strong>' . $seznam_predmetov . '</strong><br>Prijavite se.';
+                                    header('Location: prijava.php');
+                                    exit;
+                                    
+                                } catch (Exception $e) {
+                                    $pdo->rollBack();
+                                    throw $e;
                                 }
-                                
-                                // Pridobi imena dodeljenih predmetov
-                                $placeholders = implode(',', array_fill(0, count($izbrani_predmeti), '?'));
-                                $stmt = $pdo->prepare("SELECT ime_predmeta FROM predmet WHERE predmet_id IN ($placeholders)");
-                                $stmt->execute($izbrani_predmeti);
-                                $predmeti_imena = $stmt->fetchAll(PDO::FETCH_COLUMN);
-                                
-                                // Potrdi transakcijo
-                                $pdo->commit();
-                                
-                                $seznam_predmetov = implode(', ', $predmeti_imena);
-                                $_SESSION['registracija_uspesna'] = 'Uspešno ste se registrirali kot dijak!<br>Dodeljeni predmeti (' . $st_predmetov . '): <strong>' . $seznam_predmetov . '</strong><br>Prijavite se.';
-                                header('Location: prijava.php');
-                                exit;
-                                
-                            } catch (Exception $e) {
-                                $pdo->rollBack();
-                                throw $e;
                             }
                         }
                     }
                     
                 } else {
-                    $napaka = 'Neveljaven razred. Vnesite veljaven razred (npr. R1A, E4B) ali "profesor".';
+                    $napaka = 'Neveljaven razred. Vnesite veljaven razred (npr. R1A, E4A) ali "profesor".';
                 }
                 
             } catch (PDOException $e) {
@@ -287,7 +284,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
       <input type="email" name="email_reg" placeholder="E-pošta" required value="<?php echo htmlspecialchars($_POST['email_reg'] ?? ''); ?>">
 
-      <input type="text" name="razred_reg" placeholder="Razred" required value="<?php echo htmlspecialchars($_POST['razred_reg'] ?? ''); ?>">
+      <input type="text" name="razred_reg" placeholder="Razred (R1A-R4A, E1A-E4A ali profesor)" required value="<?php echo htmlspecialchars($_POST['razred_reg'] ?? ''); ?>">
 
       <input type="password" name="geslo_reg" placeholder="Geslo (min. 10 znakov)" required>
 
