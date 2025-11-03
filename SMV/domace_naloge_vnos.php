@@ -18,10 +18,10 @@ $prva_crka = mb_strtoupper(mb_substr($ime, 0, 1, 'UTF-8'), 'UTF-8');
 $uspeh = '';
 $napaka = '';
 
-// Ocenjevanje oddaje
+// Ocenjevanje oddaje - POPRAVLJENO!
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['oceni_oddajo'])) {
     $oddaja_id = $_POST['oddaja_id'] ?? '';
-    $status = $_POST['status'] ?? '';
+    $status = $_POST['oceni_oddajo']; // SPREMEMBA: status vzamemo direktno iz gumba
     $komentar = trim($_POST['komentar'] ?? '');
     
     if (empty($oddaja_id) || empty($status)) {
@@ -40,7 +40,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['oceni_oddajo'])) {
             ]);
             $uspeh = 'Oddaja je bila uspešno ocenjena!';
         } catch (PDOException $e) {
-            $napaka = 'Napaka pri ocenjevanju oddaje.';
+            $napaka = 'Napaka pri ocenjevanju oddaje: ' . $e->getMessage();
             error_log($e->getMessage());
         }
     }
@@ -65,7 +65,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['dodaj_nalogo'])) {
             if ($stmt->fetchColumn() == 0) {
                 $napaka = 'Ne učite tega predmeta!';
             } else {
-                $stmt = $pdo->prepare("INSERT INTO domaca_naloga (predmet_id, naslov, navodila, datum_objave, rok) 
+                $stmt = $pdo->prepare("INSERT INTO domača_naloga (predmet_id, naslov, navodila, datum_objave, rok) 
                                        VALUES (:predmet_id, :naslov, :navodila, NOW(), :rok)");
                 $stmt->execute([
                     'predmet_id' => $predmet_id,
@@ -82,14 +82,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['dodaj_nalogo'])) {
     }
 }
 
-// Brisanje domače naloge - NOVO!
+// Brisanje domače naloge
 if (isset($_GET['izbrisi']) && is_numeric($_GET['izbrisi'])) {
     $naloga_id = $_GET['izbrisi'];
     
     try {
         // Preveri ali je naloga profesorjevega predmeta
         $stmt = $pdo->prepare("SELECT dn.naloga_id 
-                              FROM domaca_naloga dn
+                              FROM domača_naloga dn
                               JOIN profesor_predmet pp ON dn.predmet_id = pp.predmet_id
                               WHERE dn.naloga_id = :naloga_id AND pp.profesor_id = :profesor_id");
         $stmt->execute(['naloga_id' => $naloga_id, 'profesor_id' => $profesor_id]);
@@ -107,7 +107,7 @@ if (isset($_GET['izbrisi']) && is_numeric($_GET['izbrisi'])) {
             }
             
             // Izbriši nalogo (CASCADE bo izbrisal oddaje)
-            $stmt = $pdo->prepare("DELETE FROM domaca_naloga WHERE naloga_id = :naloga_id");
+            $stmt = $pdo->prepare("DELETE FROM domača_naloga WHERE naloga_id = :naloga_id");
             $stmt->execute(['naloga_id' => $naloga_id]);
             
             $uspeh = 'Domača naloga je bila uspešno izbrisana!';
@@ -134,13 +134,13 @@ try {
     error_log($e->getMessage());
 }
 
-// Pridobi vse domače naloge profesorja - NOVO!
+// Pridobi vse domače naloge profesorja
 try {
     $stmt = $pdo->prepare("SELECT dn.naloga_id, dn.naslov, dn.navodila, dn.datum_objave, dn.rok,
                           p.ime_predmeta,
                           COUNT(DISTINCT od.oddaja_id) as st_oddaj,
                           COUNT(DISTINCT CASE WHEN od.status = 'oddano' THEN od.oddaja_id END) as st_v_pregledu
-                          FROM domaca_naloga dn
+                          FROM domača_naloga dn
                           JOIN predmet p ON dn.predmet_id = p.predmet_id
                           JOIN profesor_predmet pp ON p.predmet_id = pp.predmet_id
                           LEFT JOIN oddaja_naloge od ON dn.naloga_id = od.naloga_id
@@ -152,7 +152,6 @@ try {
 } catch (PDOException $e) {
     $vse_naloge = [];
     error_log($e->getMessage());
-    echo "<!-- DEBUG: " . $e->getMessage() . " -->";
 }
 
 // Pridobi oddaje za pregled
@@ -164,7 +163,7 @@ try {
                           d.ime_dijaka, d.priimek_dijaka, d.gmail as dijak_email,
                           r.oznaka as razred
                           FROM oddaja_naloge od
-                          JOIN domaca_naloga dn ON od.naloga_id = dn.naloga_id
+                          JOIN domača_naloga dn ON od.naloga_id = dn.naloga_id
                           JOIN predmet p ON dn.predmet_id = p.predmet_id
                           JOIN profesor_predmet pp ON p.predmet_id = pp.predmet_id
                           JOIN dijaki d ON od.id_dijaka = d.id_dijaka
@@ -202,461 +201,151 @@ foreach ($oddaje as $oddaja) {
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Domače naloge - Upravljanje | E-Ocene</title>
   <style>
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-
+    * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      margin: 0;
-      background: #f8f9ff;
+      margin: 0; background: #f8f9ff;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
-      color: #333;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
+      color: #333; min-height: 100vh; display: flex; flex-direction: column;
     }
-
     .header {
-      height: 70px;
-      background: linear-gradient(135deg, #8884FF, #AB64D6);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0 30px;
-      color: white;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-      z-index: 100;
+      height: 70px; background: linear-gradient(135deg, #8884FF, #AB64D6);
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 30px; color: white; box-shadow: 0 2px 6px rgba(0,0,0,0.1); z-index: 100;
     }
-
-    .header h1 {
-      font-size: 22px;
-      font-weight: bold;
-      cursor: pointer;
-      transition: opacity 0.2s;
-    }
-
-    .header h1:hover {
-      opacity: 0.9;
-    }
-
-    .avatar-container {
-      position: relative;
-    }
-
+    .header h1 { font-size: 22px; font-weight: bold; cursor: pointer; transition: opacity 0.2s; }
+    .header h1:hover { opacity: 0.9; }
+    .avatar-container { position: relative; }
     .avatar-link {
-      width: 44px;
-      height: 44px;
-      background: white;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: #8884FF;
-      font-weight: bold;
-      font-size: 18px;
-      cursor: pointer;
-      transition: transform 0.2s;
+      width: 44px; height: 44px; background: white; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      color: #8884FF; font-weight: bold; font-size: 18px;
+      cursor: pointer; transition: transform 0.2s;
     }
-
-    .avatar-link:hover {
-      transform: scale(1.05);
-    }
-
+    .avatar-link:hover { transform: scale(1.05); }
     #odjava-menu {
-      display: none;
-      position: absolute;
-      top: 100%;
-      left: 50%;
-      transform: translateX(-50%);
-      background: white;
-      color: #333;
-      padding: 10px 20px;
-      border-radius: 8px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-      font-size: 14px;
-      text-decoration: none;
-      margin-top: 8px;
-      z-index: 1000;
-      font-weight: 500;
+      display: none; position: absolute; top: 100%; left: 50%;
+      transform: translateX(-50%); background: white; color: #333;
+      padding: 10px 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+      font-size: 14px; text-decoration: none; margin-top: 8px; z-index: 1000; font-weight: 500;
     }
-
-    #odjava-menu:hover {
-      background: #f5f5f5;
-      color: #8884FF;
-    }
-
-    .vsebina {
-      padding: 40px;
-      flex: 1;
-      max-width: 1400px;
-      margin: 0 auto;
-      width: 100%;
-    }
-
-    .naslov {
-      font-size: 28px;
-      margin-bottom: 30px;
-      color: #2c2c2c;
-      font-weight: 600;
-    }
-
-    .tabs {
-      display: flex;
-      gap: 10px;
-      margin-bottom: 30px;
-      border-bottom: 2px solid #e0e0e0;
-    }
-
+    #odjava-menu:hover { background: #f5f5f5; color: #8884FF; }
+    .vsebina { padding: 40px; flex: 1; max-width: 1400px; margin: 0 auto; width: 100%; }
+    .naslov { font-size: 28px; margin-bottom: 30px; color: #2c2c2c; font-weight: 600; }
+    .tabs { display: flex; gap: 10px; margin-bottom: 30px; border-bottom: 2px solid #e0e0e0; }
     .tab {
-      padding: 12px 24px;
-      background: none;
-      border: none;
-      font-size: 16px;
-      font-weight: 500;
-      color: #666;
-      cursor: pointer;
-      border-bottom: 3px solid transparent;
+      padding: 12px 24px; background: none; border: none; font-size: 16px;
+      font-weight: 500; color: #666; cursor: pointer; border-bottom: 3px solid transparent;
       transition: all 0.2s;
     }
-
-    .tab:hover {
-      color: #8884FF;
-    }
-
-    .tab.active {
-      color: #8884FF;
-      border-bottom-color: #8884FF;
-    }
-
-    .tab-content {
-      display: none;
-    }
-
-    .tab-content.active {
-      display: block;
-    }
-
-    .sporocilo {
-      padding: 15px 20px;
-      border-radius: 8px;
-      margin-bottom: 20px;
-      font-size: 14px;
-    }
-
-    .uspeh {
-      background: #d4edda;
-      color: #155724;
-      border-left: 4px solid #28a745;
-    }
-
-    .napaka {
-      background: #f8d7da;
-      color: #721c24;
-      border-left: 4px solid #dc3545;
-    }
-
+    .tab:hover { color: #8884FF; }
+    .tab.active { color: #8884FF; border-bottom-color: #8884FF; }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+    .sporocilo { padding: 15px 20px; border-radius: 8px; margin-bottom: 20px; font-size: 14px; }
+    .uspeh { background: #d4edda; color: #155724; border-left: 4px solid #28a745; }
+    .napaka { background: #f8d7da; color: #721c24; border-left: 4px solid #dc3545; }
     .sekcija {
-      background: white;
-      padding: 30px;
-      border-radius: 12px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-      margin-bottom: 30px;
+      background: white; padding: 30px; border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-bottom: 30px;
     }
-
     .sekcija h2 {
-      font-size: 20px;
-      margin-bottom: 20px;
-      color: #444;
-      display: flex;
-      align-items: center;
-      gap: 10px;
+      font-size: 20px; margin-bottom: 20px; color: #444;
+      display: flex; align-items: center; gap: 10px;
     }
-
     .badge {
-      background: #dc3545;
-      color: white;
-      padding: 4px 12px;
-      border-radius: 15px;
-      font-size: 14px;
-      font-weight: 600;
+      background: #dc3545; color: white; padding: 4px 12px;
+      border-radius: 15px; font-size: 14px; font-weight: 600;
     }
-
-    .badge.zelena {
-      background: #28a745;
-    }
-
-    .badge.modra {
-      background: #007bff;
-    }
-
-    .form-group {
-      margin-bottom: 20px;
-    }
-
+    .badge.zelena { background: #28a745; }
+    .badge.modra { background: #007bff; }
+    .form-group { margin-bottom: 20px; }
     .form-group label {
-      display: block;
-      margin-bottom: 8px;
-      font-weight: 500;
-      color: #555;
-      font-size: 14px;
+      display: block; margin-bottom: 8px; font-weight: 500;
+      color: #555; font-size: 14px;
     }
-
-    .form-group input,
-    .form-group select,
-    .form-group textarea {
-      width: 100%;
-      padding: 12px;
-      border: 1px solid #ddd;
-      border-radius: 8px;
-      font-size: 14px;
-      font-family: inherit;
+    .form-group input, .form-group select, .form-group textarea {
+      width: 100%; padding: 12px; border: 1px solid #ddd;
+      border-radius: 8px; font-size: 14px; font-family: inherit;
     }
-
-    .form-group textarea {
-      min-height: 120px;
-      resize: vertical;
+    .form-group textarea { min-height: 120px; resize: vertical; }
+    .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+      outline: none; border-color: #8884FF;
     }
-
-    .form-group input:focus,
-    .form-group select:focus,
-    .form-group textarea:focus {
-      outline: none;
-      border-color: #8884FF;
-    }
-
     .btn {
-      padding: 12px 30px;
-      background: #8884FF;
-      color: white;
-      border: none;
-      border-radius: 8px;
-      font-size: 15px;
-      cursor: pointer;
-      font-weight: 600;
-      transition: background 0.2s;
+      padding: 12px 30px; background: #8884FF; color: white;
+      border: none; border-radius: 8px; font-size: 15px;
+      cursor: pointer; font-weight: 600; transition: background 0.2s;
     }
-
-    .btn:hover {
-      background: #7774ee;
-    }
-
-    .btn-odobri {
-      background: #28a745;
-      padding: 8px 20px;
-      font-size: 14px;
-    }
-
-    .btn-odobri:hover {
-      background: #218838;
-    }
-
-    .btn-zavrni {
-      background: #dc3545;
-      padding: 8px 20px;
-      font-size: 14px;
-    }
-
-    .btn-zavrni:hover {
-      background: #c82333;
-    }
-
+    .btn:hover { background: #7774ee; }
+    .btn-odobri { background: #28a745; padding: 8px 20px; font-size: 14px; }
+    .btn-odobri:hover { background: #218838; }
+    .btn-zavrni { background: #dc3545; padding: 8px 20px; font-size: 14px; }
+    .btn-zavrni:hover { background: #c82333; }
     .btn-prenesi {
-      background: #007bff;
-      padding: 8px 20px;
-      font-size: 14px;
-      text-decoration: none;
-      display: inline-block;
-      margin-top: 10px;
+      background: #007bff; padding: 8px 20px; font-size: 14px;
+      text-decoration: none; display: inline-block; margin-top: 10px;
     }
-
-    .btn-prenesi:hover {
-      background: #0056b3;
-    }
-
-    .btn-izbrisi {
-      background: #dc3545;
-      padding: 8px 16px;
-      font-size: 13px;
-    }
-
-    .btn-izbrisi:hover {
-      background: #c82333;
-    }
-
+    .btn-prenesi:hover { background: #0056b3; }
+    .btn-izbrisi { background: #dc3545; padding: 8px 16px; font-size: 13px; }
+    .btn-izbrisi:hover { background: #c82333; }
     .oddaja-card {
-      background: #f8f9ff;
-      padding: 20px;
-      border-radius: 10px;
-      margin-bottom: 15px;
-      border-left: 4px solid #8884FF;
+      background: #f8f9ff; padding: 20px; border-radius: 10px;
+      margin-bottom: 15px; border-left: 4px solid #8884FF;
     }
-
-    .oddaja-card.pregledano {
-      border-left-color: #28a745;
-      opacity: 0.8;
-    }
-
-    .oddaja-card.zavrnjeno {
-      border-left-color: #dc3545;
-      opacity: 0.8;
-    }
-
+    .oddaja-card.pregledano { border-left-color: #28a745; opacity: 0.8; }
+    .oddaja-card.zavrnjeno { border-left-color: #dc3545; opacity: 0.8; }
     .naloga-card {
-      background: #f8f9ff;
-      padding: 20px;
-      border-radius: 10px;
-      margin-bottom: 15px;
-      border-left: 4px solid #8884FF;
-      position: relative;
+      background: #f8f9ff; padding: 20px; border-radius: 10px;
+      margin-bottom: 15px; border-left: 4px solid #8884FF; position: relative;
     }
-
     .oddaja-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: start;
-      margin-bottom: 10px;
+      display: flex; justify-content: space-between; align-items: start; margin-bottom: 10px;
     }
-
-    .dijak-info {
-      font-size: 16px;
-      font-weight: 600;
-      color: #333;
-    }
-
+    .dijak-info { font-size: 16px; font-weight: 600; color: #333; }
     .dijak-razred {
-      display: inline-block;
-      background: #8884FF;
-      color: white;
-      padding: 3px 10px;
-      border-radius: 12px;
-      font-size: 12px;
-      margin-left: 8px;
+      display: inline-block; background: #8884FF; color: white;
+      padding: 3px 10px; border-radius: 12px; font-size: 12px; margin-left: 8px;
     }
-
-    .naloga-info {
-      font-size: 13px;
-      color: #666;
-      margin: 5px 0;
-    }
-
+    .naloga-info { font-size: 13px; color: #666; margin: 5px 0; }
     .status-badge {
-      display: inline-block;
-      padding: 5px 12px;
-      border-radius: 15px;
-      font-size: 12px;
-      font-weight: 600;
+      display: inline-block; padding: 5px 12px; border-radius: 15px;
+      font-size: 12px; font-weight: 600;
     }
-
-    .status-oddano {
-      background: #ffc107;
-      color: #856404;
-    }
-
-    .status-pregledano {
-      background: #28a745;
-      color: white;
-    }
-
-    .status-zavrnjeno {
-      background: #dc3545;
-      color: white;
-    }
-
-    .oceni-forma {
-      margin-top: 15px;
-      padding-top: 15px;
-      border-top: 1px solid #ddd;
-    }
-
+    .status-oddano { background: #ffc107; color: #856404; }
+    .status-pregledano { background: #28a745; color: white; }
+    .status-zavrnjeno { background: #dc3545; color: white; }
+    .oceni-forma { margin-top: 15px; padding-top: 15px; border-top: 1px solid #ddd; }
     .oceni-forma textarea {
-      width: 100%;
-      padding: 10px;
-      border: 1px solid #ddd;
-      border-radius: 6px;
-      font-size: 14px;
-      margin-bottom: 10px;
-      min-height: 80px;
+      width: 100%; padding: 10px; border: 1px solid #ddd;
+      border-radius: 6px; font-size: 14px; margin-bottom: 10px; min-height: 80px;
     }
-
-    .oceni-forma .gumbi {
-      display: flex;
-      gap: 10px;
-    }
-
+    .oceni-forma .gumbi { display: flex; gap: 10px; }
     .datoteka-info {
-      margin-top: 10px;
-      padding: 12px;
-      background: white;
-      border-radius: 6px;
-      font-size: 13px;
-      border: 1px solid #ddd;
+      margin-top: 10px; padding: 12px; background: white;
+      border-radius: 6px; font-size: 13px; border: 1px solid #ddd;
     }
-
-    .datoteka-info strong {
-      color: #8884FF;
-    }
-
+    .datoteka-info strong { color: #8884FF; }
     .komentar-box {
-      background: #fff3cd;
-      padding: 10px;
-      border-radius: 6px;
-      margin-top: 10px;
-      font-size: 13px;
-      border-left: 3px solid #ffc107;
+      background: #fff3cd; padding: 10px; border-radius: 6px;
+      margin-top: 10px; font-size: 13px; border-left: 3px solid #ffc107;
     }
-
-    .prazen {
-      text-align: center;
-      padding: 40px;
-      color: #999;
-      font-size: 15px;
-    }
-
-    .naloga-statistika {
-      display: flex;
-      gap: 20px;
-      margin-top: 10px;
-      font-size: 13px;
-    }
-
-    .stat-item {
-      display: flex;
-      align-items: center;
-      gap: 5px;
-      color: #666;
-    }
-
+    .prazen { text-align: center; padding: 40px; color: #999; font-size: 15px; }
+    .naloga-statistika { display: flex; gap: 20px; margin-top: 10px; font-size: 13px; }
+    .stat-item { display: flex; align-items: center; gap: 5px; color: #666; }
     .footer {
-      height: 50px;
-      background: linear-gradient(135deg, #8884FF, #AB64D6);
-      color: white;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 14px;
-      box-shadow: 0 -2px 6px rgba(0,0,0,0.08);
+      height: 50px; background: linear-gradient(135deg, #8884FF, #AB64D6);
+      color: white; display: flex; align-items: center; justify-content: center;
+      font-size: 14px; box-shadow: 0 -2px 6px rgba(0,0,0,0.08);
     }
-
     @media (max-width: 768px) {
-      .vsebina {
-        padding: 20px;
-      }
-      .header {
-        padding: 0 20px;
-      }
-      .tabs {
-        overflow-x: auto;
-      }
-      .oceni-forma .gumbi {
-        flex-direction: column;
-      }
+      .vsebina { padding: 20px; }
+      .header { padding: 0 20px; }
+      .tabs { overflow-x: auto; }
+      .oceni-forma .gumbi { flex-direction: column; }
     }
   </style>
 </head>
 <body>
-
   <div class="header">
     <h1 onclick="window.location.href='main_page.php'">E-Ocene</h1>
     <div class="avatar-container">
@@ -676,7 +365,6 @@ foreach ($oddaje as $oddaja) {
       <div class="sporocilo napaka"><?php echo htmlspecialchars($napaka); ?></div>
     <?php endif; ?>
 
-    <!-- TABS -->
     <div class="tabs">
       <button class="tab active" onclick="switchTab('pregled')">Za pregled <?php if(!empty($oddaje_za_pregled)): ?><span class="badge"><?php echo count($oddaje_za_pregled); ?></span><?php endif; ?></button>
       <button class="tab" onclick="switchTab('pregledane')">Pregledane</button>
@@ -723,9 +411,8 @@ foreach ($oddaje as $oddaja) {
                 <input type="hidden" name="oddaja_id" value="<?php echo $oddaja['oddaja_id']; ?>">
                 <textarea name="komentar" placeholder="Komentar (opcijsko)"></textarea>
                 <div class="gumbi">
-                  <button type="submit" name="oceni_oddajo" value="pregledano" onclick="this.form.status.value='pregledano'" class="btn btn-odobri">✓ Odobri</button>
-                  <button type="submit" name="oceni_oddajo" value="zavrnjeno" onclick="this.form.status.value='zavrnjeno'" class="btn btn-zavrni">✗ Zavrni</button>
-                  <input type="hidden" name="status" value="">
+                  <button type="submit" name="oceni_oddajo" value="pregledano" class="btn btn-odobri">✓ Odobri</button>
+                  <button type="submit" name="oceni_oddajo" value="zavrnjeno" class="btn btn-zavrni">✗ Zavrni</button>
                 </div>
               </form>
             </div>
@@ -782,7 +469,7 @@ foreach ($oddaje as $oddaja) {
       </div>
     </div>
 
-    <!-- TAB 3: UPRAVLJANJE NALOG - NOVO! -->
+    <!-- TAB 3: UPRAVLJANJE NALOG -->
     <div id="tab-upravljanje" class="tab-content">
       <div class="sekcija">
         <h2>Vse domače naloge</h2>
