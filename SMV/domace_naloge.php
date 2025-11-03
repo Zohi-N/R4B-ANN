@@ -16,34 +16,109 @@ $prva_crka = mb_strtoupper(mb_substr($ime, 0, 1, 'UTF-8'), 'UTF-8');
 $uspeh = '';
 $napaka = '';
 
+// Ustvari mapo za shranjevanje datotek, če ne obstaja
+$upload_dir = 'uploads/domace_naloge/';
+if (!file_exists($upload_dir)) {
+    mkdir($upload_dir, 0755, true);
+}
+
 // Oddaja domače naloge
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['oddaj_nalogo'])) {
     $naloga_id = $_POST['naloga_id'] ?? '';
-    $datoteka_link = trim($_POST['datoteka_link'] ?? '');
+    $naslov_naloge = $_POST['naslov_naloge'] ?? '';
+    $potrdi_povozi = isset($_POST['potrdi_povozi']) && $_POST['potrdi_povozi'] === 'da';
     
-    if (empty($naloga_id) || empty($datoteka_link)) {
-        $napaka = 'Vsa polja so obvezna.';
+    if (empty($naloga_id) || !isset($_FILES['datoteka']) || $_FILES['datoteka']['error'] === UPLOAD_ERR_NO_FILE) {
+        $napaka = 'Prosim izberite datoteko za oddajo.';
     } else {
         try {
             // Preveri ali je dijak že oddal to nalogo
-            $stmt = $pdo->prepare("SELECT oddaja_id FROM oddaja_naloge WHERE naloga_id = :naloga_id AND id_dijaka = :id_dijaka");
+            $stmt = $pdo->prepare("SELECT oddaja_id, datoteka_ime FROM oddaja_naloge WHERE naloga_id = :naloga_id AND id_dijaka = :id_dijaka");
             $stmt->execute([
                 'naloga_id' => $naloga_id,
                 'id_dijaka' => $dijak_id
             ]);
+            $obstojeca_oddaja = $stmt->fetch();
             
-            if ($stmt->fetch()) {
-                $napaka = 'To nalogo ste že oddali!';
+            // Če naloga že obstaja in uporabnik ni potrdil prepisa
+            if ($obstojeca_oddaja && !$potrdi_povozi) {
+                $napaka = 'To nalogo ste že oddali! Za ponovno oddajo označite potrditveno polje.';
             } else {
-                $stmt = $pdo->prepare("INSERT INTO oddaja_naloge (naloga_id, id_dijaka, datum_objave, datoteka_link, status) 
-                                       VALUES (:naloga_id, :id_dijaka, NOW(), :datoteka_link, 'oddano')");
-                $stmt->execute([
-                    'naloga_id' => $naloga_id,
-                    'id_dijaka' => $dijak_id,
-                    'datoteka_link' => $datoteka_link
-                ]);
-                $uspeh = 'Domača naloga je bila uspešno oddana! ✓';
+                // Obdelava naložene datoteke
+                $file = $_FILES['datoteka'];
+                
+                // Preveri napake pri nalaganju
+                if ($file['error'] !== UPLOAD_ERR_OK) {
+                    throw new Exception('Napaka pri nalaganju datoteke.');
+                }
+                
+                // Preveri velikost datoteke (maks 10MB)
+                if ($file['size'] > 10 * 1024 * 1024) {
+                    throw new Exception('Datoteka je prevelika. Maksimalna velikost je 10MB.');
+                }
+                
+                // Dovoljene končnice
+                $allowed_extensions = ['pdf', 'doc', 'docx', 'txt', 'jpg', 'jpeg', 'png', 'zip', 'rar'];
+                $file_extension = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+                
+                if (!in_array($file_extension, $allowed_extensions)) {
+                    throw new Exception('Nedovoljen tip datoteke. Dovoljeni so: ' . implode(', ', $allowed_extensions));
+                }
+                
+                // Pripravi ime datoteke: Priimek_Ime_Naslov_naloge.ext
+                $safe_priimek = preg_replace('/[^a-zA-Z0-9]/', '_', $priimek);
+                $safe_ime = preg_replace('/[^a-zA-Z0-9]/', '_', $ime);
+                $safe_naslov = preg_replace('/[^a-zA-Z0-9]/', '_', $naslov_naloge);
+                $safe_naslov = substr($safe_naslov, 0, 50); // Omeji dolžino naslova
+                
+                $file_name = $safe_priimek . '_' . $safe_ime . '_' . $safe_naslov . '.' . $file_extension;
+                $file_path = $upload_dir . $file_name;
+                
+                // Če obstaja stara datoteka, jo izbriši
+                if ($obstojeca_oddaja && !empty($obstojeca_oddaja['datoteka_ime'])) {
+                    $old_file = $upload_dir . $obstojeca_oddaja['datoteka_ime'];
+                    if (file_exists($old_file)) {
+                        unlink($old_file);
+                    }
+                }
+                
+                // Premakni naloženo datoteko
+                if (!move_uploaded_file($file['tmp_name'], $file_path)) {
+                    throw new Exception('Napaka pri shranjevanju datoteke.');
+                }
+                
+                // Posodobi ali vstavi zapis v bazo
+                if ($obstojeca_oddaja) {
+                    // Posodobi obstoječo oddajo
+                    $stmt = $pdo->prepare("UPDATE oddaja_naloge 
+                                          SET datum_objave = NOW(), 
+                                              datoteka_link = :datoteka_link,
+                                              datoteka_ime = :datoteka_ime,
+                                              status = 'oddano',
+                                              komentar_profesorja = NULL,
+                                              datum_pregleda = NULL
+                                          WHERE oddaja_id = :oddaja_id");
+                    $stmt->execute([
+                        'datoteka_link' => $file_path,
+                        'datoteka_ime' => $file_name,
+                        'oddaja_id' => $obstojeca_oddaja['oddaja_id']
+                    ]);
+                    $uspeh = 'Domača naloga je bila ponovno oddana! ✓';
+                } else {
+                    // Vstavi novo oddajo
+                    $stmt = $pdo->prepare("INSERT INTO oddaja_naloge (naloga_id, id_dijaka, datum_objave, datoteka_link, datoteka_ime, status) 
+                                           VALUES (:naloga_id, :id_dijaka, NOW(), :datoteka_link, :datoteka_ime, 'oddano')");
+                    $stmt->execute([
+                        'naloga_id' => $naloga_id,
+                        'id_dijaka' => $dijak_id,
+                        'datoteka_link' => $file_path,
+                        'datoteka_ime' => $file_name
+                    ]);
+                    $uspeh = 'Domača naloga je bila uspešno oddana! ✓';
+                }
             }
+        } catch (Exception $e) {
+            $napaka = $e->getMessage();
         } catch (PDOException $e) {
             $napaka = 'Napaka pri oddaji domače naloge.';
             error_log($e->getMessage());
@@ -51,11 +126,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['oddaj_nalogo'])) {
     }
 }
 
-// Pridobi domače naloge za dijaka (glede na njegove predmete)
+// Pridobi domače naloge za dijaka
 try {
     $stmt = $pdo->prepare("SELECT dn.naloga_id, dn.naslov, dn.navodila, dn.datum_objave, dn.rok,
                           p.ime_predmeta,
-                          od.oddaja_id, od.datum_objave as datum_oddaje, od.datoteka_link,
+                          od.oddaja_id, od.datum_objave as datum_oddaje, od.datoteka_link, od.datoteka_ime,
                           od.status, od.komentar_profesorja, od.datum_pregleda
                           FROM domača_naloga dn
                           JOIN predmet p ON dn.predmet_id = p.predmet_id
@@ -80,13 +155,10 @@ $pregledane = [];
 
 foreach ($naloge as $naloga) {
     if (!$naloga['oddaja_id']) {
-        // Neodane
         $neodane[] = $naloga;
     } elseif ($naloga['status'] === 'oddano') {
-        // Oddane, čakajo na pregled
         $oddane_v_pregledu[] = $naloga;
     } else {
-        // Pregledane (odobrene ali zavrnjene)
         $pregledane[] = $naloga;
     }
 }
@@ -345,18 +417,68 @@ foreach ($naloge as $naloga) {
       border-top: 1px solid #ddd;
     }
 
-    .oddaja-forma input {
+    .file-input-wrapper {
+      position: relative;
+      display: inline-block;
       width: 100%;
-      padding: 10px;
-      border: 1px solid #ddd;
-      border-radius: 6px;
-      font-size: 14px;
       margin-bottom: 10px;
     }
 
-    .oddaja-forma input:focus {
-      outline: none;
-      border-color: #8884FF;
+    .file-input-wrapper input[type="file"] {
+      position: absolute;
+      opacity: 0;
+      width: 100%;
+      height: 100%;
+      cursor: pointer;
+    }
+
+    .file-input-label {
+      display: block;
+      padding: 12px;
+      background: white;
+      border: 2px dashed #8884FF;
+      border-radius: 6px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-size: 14px;
+      color: #666;
+    }
+
+    .file-input-label:hover {
+      background: #f8f9ff;
+      border-color: #7774ee;
+    }
+
+    .file-input-label.has-file {
+      background: #f8f9ff;
+      border-style: solid;
+      color: #8884FF;
+      font-weight: 600;
+    }
+
+    .checkbox-wrapper {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 10px;
+      padding: 10px;
+      background: #fff3cd;
+      border-radius: 6px;
+      border-left: 3px solid #ffc107;
+    }
+
+    .checkbox-wrapper input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      cursor: pointer;
+    }
+
+    .checkbox-wrapper label {
+      font-size: 13px;
+      color: #856404;
+      cursor: pointer;
+      margin: 0;
     }
 
     .btn {
@@ -369,10 +491,16 @@ foreach ($naloge as $naloga) {
       cursor: pointer;
       font-weight: 600;
       transition: background 0.2s;
+      width: 100%;
     }
 
     .btn:hover {
       background: #7774ee;
+    }
+
+    .btn:disabled {
+      background: #ccc;
+      cursor: not-allowed;
     }
 
     .oddaja-info {
@@ -392,7 +520,11 @@ foreach ($naloge as $naloga) {
     .oddaja-info a {
       color: inherit;
       font-weight: 600;
-      word-break: break-all;
+      text-decoration: none;
+    }
+
+    .oddaja-info a:hover {
+      text-decoration: underline;
     }
 
     .komentar-profesorja {
@@ -503,9 +635,20 @@ foreach ($naloge as $naloga) {
               <?php echo nl2br(htmlspecialchars($naloga['navodila'])); ?>
             </div>
 
-            <form method="POST" action="" class="oddaja-forma">
+            <form method="POST" action="" enctype="multipart/form-data" class="oddaja-forma" onsubmit="return validateForm(this)">
               <input type="hidden" name="naloga_id" value="<?php echo $naloga['naloga_id']; ?>">
-              <input type="url" name="datoteka_link" placeholder="Povezava do oddaje (npr. Google Drive link)" required>
+              <input type="hidden" name="naslov_naloge" value="<?php echo htmlspecialchars($naloga['naslov']); ?>">
+              
+              <div class="file-input-wrapper">
+                <input type="file" name="datoteka" id="file_<?php echo $naloga['naloga_id']; ?>" required 
+                       accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png,.zip,.rar"
+                       onchange="updateFileName(this)">
+                <label for="file_<?php echo $naloga['naloga_id']; ?>" class="file-input-label" id="label_<?php echo $naloga['naloga_id']; ?>">
+                  📎 Kliknite za izbiro datoteke<br>
+                  <small>Dovoljeni formati: PDF, DOC, DOCX, TXT, JPG, PNG, ZIP, RAR (maks. 10MB)</small>
+                </label>
+              </div>
+
               <button type="submit" name="oddaj_nalogo" class="btn">Oddaj nalogo</button>
             </form>
           </div>
@@ -539,10 +682,36 @@ foreach ($naloge as $naloga) {
 
             <div class="oddaja-info">
               ✅ <strong>Oddano:</strong> <?php echo date('d.m.Y H:i', strtotime($naloga['datum_oddaje'])); ?><br>
-              📎 <strong>Povezava:</strong> <a href="<?php echo htmlspecialchars($naloga['datoteka_link']); ?>" target="_blank">
-                <?php echo htmlspecialchars($naloga['datoteka_link']); ?>
+              📎 <strong>Datoteka:</strong> <a href="<?php echo htmlspecialchars($naloga['datoteka_link']); ?>" download>
+                <?php echo htmlspecialchars($naloga['datoteka_ime']); ?>
               </a>
             </div>
+
+            <!-- Omogoči ponovno oddajo -->
+            <form method="POST" action="" enctype="multipart/form-data" class="oddaja-forma" onsubmit="return validateResubmit(this)">
+              <input type="hidden" name="naloga_id" value="<?php echo $naloga['naloga_id']; ?>">
+              <input type="hidden" name="naslov_naloge" value="<?php echo htmlspecialchars($naloga['naslov']); ?>">
+              
+              <div class="file-input-wrapper">
+                <input type="file" name="datoteka" id="refile_<?php echo $naloga['naloga_id']; ?>"
+                       accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png,.zip,.rar"
+                       onchange="updateFileName(this); showCheckbox(<?php echo $naloga['naloga_id']; ?>)">
+                <label for="refile_<?php echo $naloga['naloga_id']; ?>" class="file-input-label" id="relabel_<?php echo $naloga['naloga_id']; ?>">
+                  🔄 Želite ponovno oddati? Kliknite za izbiro nove datoteke
+                </label>
+              </div>
+
+              <div class="checkbox-wrapper" id="checkbox_<?php echo $naloga['naloga_id']; ?>" style="display: none;">
+                <input type="checkbox" name="potrdi_povozi" value="da" id="potrdi_<?php echo $naloga['naloga_id']; ?>" required>
+                <label for="potrdi_<?php echo $naloga['naloga_id']; ?>">
+                  ⚠️ Potrjujem, da želim zamenjati obstoječo oddajo z novo datoteko
+                </label>
+              </div>
+
+              <button type="submit" name="oddaj_nalogo" class="btn" id="btn_<?php echo $naloga['naloga_id']; ?>" style="display: none;">
+                Ponovno oddaj nalogo
+              </button>
+            </form>
           </div>
         <?php endforeach; ?>
       <?php endif; ?>
@@ -579,8 +748,8 @@ foreach ($naloge as $naloga) {
             <div class="oddaja-info <?php echo $naloga['status'] === 'pregledano' ? 'uspesno' : ''; ?>">
               <strong>Oddano:</strong> <?php echo date('d.m.Y H:i', strtotime($naloga['datum_oddaje'])); ?><br>
               <strong>Pregledano:</strong> <?php echo $naloga['datum_pregleda'] ? date('d.m.Y H:i', strtotime($naloga['datum_pregleda'])) : '/'; ?><br>
-              📎 <strong>Povezava:</strong> <a href="<?php echo htmlspecialchars($naloga['datoteka_link']); ?>" target="_blank">
-                <?php echo htmlspecialchars($naloga['datoteka_link']); ?>
+              📎 <strong>Datoteka:</strong> <a href="<?php echo htmlspecialchars($naloga['datoteka_link']); ?>" download>
+                <?php echo htmlspecialchars($naloga['datoteka_ime']); ?>
               </a>
             </div>
 
@@ -601,6 +770,65 @@ foreach ($naloge as $naloga) {
   </div>
 
   <script>
+    // Posodobi ime datoteke v labelu
+    function updateFileName(input) {
+      const label = document.getElementById('label_' + input.id.split('_')[1]) || 
+                    document.getElementById('relabel_' + input.id.split('_')[1]);
+      if (input.files && input.files[0]) {
+        const fileName = input.files[0].name;
+        const fileSize = (input.files[0].size / 1024 / 1024).toFixed(2);
+        label.innerHTML = `✓ ${fileName}<br><small>Velikost: ${fileSize} MB</small>`;
+        label.classList.add('has-file');
+      }
+    }
+
+    // Prikaži checkbox in gumb za ponovno oddajo
+    function showCheckbox(naloagId) {
+      document.getElementById('checkbox_' + naloagId).style.display = 'flex';
+      document.getElementById('btn_' + naloagId).style.display = 'block';
+    }
+
+    // Validacija forme za prvo oddajo
+    function validateForm(form) {
+      const fileInput = form.querySelector('input[type="file"]');
+      if (!fileInput.files || !fileInput.files[0]) {
+        alert('Prosim izberite datoteko za oddajo.');
+        return false;
+      }
+      
+      const fileSize = fileInput.files[0].size / 1024 / 1024;
+      if (fileSize > 10) {
+        alert('Datoteka je prevelika. Maksimalna velikost je 10MB.');
+        return false;
+      }
+      
+      return true;
+    }
+
+    // Validacija forme za ponovno oddajo
+    function validateResubmit(form) {
+      const fileInput = form.querySelector('input[type="file"]');
+      if (!fileInput.files || !fileInput.files[0]) {
+        alert('Prosim izberite datoteko za oddajo.');
+        return false;
+      }
+      
+      const fileSize = fileInput.files[0].size / 1024 / 1024;
+      if (fileSize > 10) {
+        alert('Datoteka je prevelika. Maksimalna velikost je 10MB.');
+        return false;
+      }
+
+      const checkbox = form.querySelector('input[type="checkbox"]');
+      if (!checkbox.checked) {
+        alert('Prosim potrdite, da želite zamenjati obstoječo oddajo.');
+        return false;
+      }
+      
+      return confirm('Ste prepričani, da želite zamenjati obstoječo oddajo z novo datoteko?');
+    }
+
+    // Avatar menu
     document.getElementById('avatar').addEventListener('click', function(e) {
       e.stopPropagation();
       const menu = document.getElementById('odjava-menu');

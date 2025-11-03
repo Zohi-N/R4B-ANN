@@ -95,9 +95,9 @@ try {
     error_log($e->getMessage());
 }
 
-// Pridobi oddaje za pregled (SAMO za predmete ki jih profesor uči)
+// Pridobi oddaje za pregled
 try {
-    $stmt = $pdo->prepare("SELECT od.oddaja_id, od.datum_objave, od.datoteka_link, od.status, 
+    $stmt = $pdo->prepare("SELECT od.oddaja_id, od.datum_objave, od.datoteka_link, od.datoteka_ime, od.status, 
                           od.komentar_profesorja, od.datum_pregleda,
                           dn.naslov, dn.rok,
                           p.ime_predmeta,
@@ -402,6 +402,19 @@ foreach ($oddaje as $oddaja) {
       background: #c82333;
     }
 
+    .btn-prenesi {
+      background: #007bff;
+      padding: 8px 20px;
+      font-size: 14px;
+      text-decoration: none;
+      display: inline-block;
+      margin-top: 10px;
+    }
+
+    .btn-prenesi:hover {
+      background: #0056b3;
+    }
+
     .oddaja-card {
       background: #f8f9ff;
       padding: 20px;
@@ -493,16 +506,17 @@ foreach ($oddaje as $oddaja) {
       gap: 10px;
     }
 
-    .link-do-oddaje {
-      display: inline-block;
-      color: #8884FF;
-      text-decoration: none;
-      font-weight: 600;
+    .datoteka-info {
       margin-top: 10px;
+      padding: 12px;
+      background: white;
+      border-radius: 6px;
+      font-size: 13px;
+      border: 1px solid #ddd;
     }
 
-    .link-do-oddaje:hover {
-      text-decoration: underline;
+    .datoteka-info strong {
+      color: #8884FF;
     }
 
     .komentar-box {
@@ -582,7 +596,7 @@ foreach ($oddaje as $oddaja) {
         <h2>Oddaje za pregled</h2>
 
         <?php if (empty($oddaje_za_pregled)): ?>
-          <div class="prazen">📭 Ni novih oddaj za pregled.</div>
+          <div class="prazen">🔭 Ni novih oddaj za pregled.</div>
         <?php else: ?>
           <?php foreach ($oddaje_za_pregled as $oddaja): ?>
             <div class="oddaja-card">
@@ -604,9 +618,12 @@ foreach ($oddaje as $oddaja) {
                 <span class="status-badge status-oddano">Oddano</span>
               </div>
 
-              <a href="<?php echo htmlspecialchars($oddaja['datoteka_link']); ?>" target="_blank" class="link-do-oddaje">
-                📎 Odpri oddajo
-              </a>
+              <div class="datoteka-info">
+                <strong>📎 Oddana datoteka:</strong> <?php echo htmlspecialchars($oddaja['datoteka_ime']); ?><br>
+                <a href="<?php echo htmlspecialchars($oddaja['datoteka_link']); ?>" download class="btn btn-prenesi">
+                  ⬇️ Prenesi datoteko
+                </a>
+              </div>
 
               <form method="POST" class="oceni-forma">
                 <input type="hidden" name="oddaja_id" value="<?php echo $oddaja['oddaja_id']; ?>">
@@ -652,9 +669,12 @@ foreach ($oddaje as $oddaja) {
                 </span>
               </div>
 
-              <a href="<?php echo htmlspecialchars($oddaja['datoteka_link']); ?>" target="_blank" class="link-do-oddaje">
-                📎 Odpri oddajo
-              </a>
+              <div class="datoteka-info">
+                <strong>📎 Oddana datoteka:</strong> <?php echo htmlspecialchars($oddaja['datoteka_ime']); ?><br>
+                <a href="<?php echo htmlspecialchars($oddaja['datoteka_link']); ?>" download class="btn btn-prenesi">
+                  ⬇️ Prenesi datoteko
+                </a>
+              </div>
 
               <?php if ($oddaja['komentar_profesorja']): ?>
                 <div class="komentar-box">
@@ -713,7 +733,6 @@ foreach ($oddaje as $oddaja) {
 
   <script>
     function switchTab(tabName) {
-      // Hide all tabs
       document.querySelectorAll('.tab-content').forEach(tab => {
         tab.classList.remove('active');
       });
@@ -721,7 +740,6 @@ foreach ($oddaje as $oddaja) {
         tab.classList.remove('active');
       });
 
-      // Show selected tab
       document.getElementById('tab-' + tabName).classList.add('active');
       event.target.classList.add('active');
     }
