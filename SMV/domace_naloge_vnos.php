@@ -2,7 +2,6 @@
 session_start();
 require_once 'database.php';
 
-// Preveri ali je uporabnik prijavljen kot profesor
 if (!isset($_SESSION['uporabnik_id']) || $_SESSION['uporabnik_tip'] !== 'profesor') {
     header('Location: prijava.php');
     exit;
@@ -10,11 +9,38 @@ if (!isset($_SESSION['uporabnik_id']) || $_SESSION['uporabnik_tip'] !== 'profeso
 
 $profesor_id = $_SESSION['uporabnik_id'];
 $ime = $_SESSION['ime'] ?? 'Profesor';
-$priimek = $_SESSION['priimek'] ?? '';
 $prva_crka = mb_strtoupper(mb_substr($ime, 0, 1, 'UTF-8'), 'UTF-8');
 
 $uspeh = '';
 $napaka = '';
+
+// Ocenjevanje oddaje
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['oceni_oddajo'])) {
+    $oddaja_id = $_POST['oddaja_id'] ?? '';
+    $status = $_POST['status'] ?? '';
+    $komentar = trim($_POST['komentar'] ?? '');
+    
+    if (empty($oddaja_id) || empty($status)) {
+        $napaka = 'Status je obvezen.';
+    } else {
+        try {
+            $stmt = $pdo->prepare("UPDATE oddaja_naloge 
+                                   SET status = :status, 
+                                       komentar_profesorja = :komentar,
+                                       datum_pregleda = NOW()
+                                   WHERE oddaja_id = :oddaja_id");
+            $stmt->execute([
+                'status' => $status,
+                'komentar' => $komentar,
+                'oddaja_id' => $oddaja_id
+            ]);
+            $uspeh = 'Oddaja je bila uspešno ocenjena!';
+        } catch (PDOException $e) {
+            $napaka = 'Napaka pri ocenjevanju oddaje.';
+            error_log($e->getMessage());
+        }
+    }
+}
 
 // Dodajanje nove domače naloge
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['dodaj_nalogo'])) {
@@ -69,25 +95,44 @@ try {
     error_log($e->getMessage());
 }
 
-// Pridobi domače naloge profesorja
+// Pridobi oddaje za pregled (SAMO za predmete ki jih profesor uči)
 try {
-    $stmt = $pdo->prepare("SELECT dn.naloga_id, dn.naslov, dn.navodila, dn.datum_objave, dn.rok, 
+    $stmt = $pdo->prepare("SELECT od.oddaja_id, od.datum_objave, od.datoteka_link, od.status, 
+                          od.komentar_profesorja, od.datum_pregleda,
+                          dn.naslov, dn.rok,
                           p.ime_predmeta,
-                          COUNT(DISTINCT od.oddaja_id) as st_oddaj,
-                          COUNT(DISTINCT dp.id_dijaka) as st_dijakov
-                          FROM domača_naloga dn
+                          d.ime_dijaka, d.priimek_dijaka, d.gmail as dijak_email,
+                          r.oznaka as razred
+                          FROM oddaja_naloge od
+                          JOIN domača_naloga dn ON od.naloga_id = dn.naloga_id
                           JOIN predmet p ON dn.predmet_id = p.predmet_id
                           JOIN profesor_predmet pp ON p.predmet_id = pp.predmet_id
-                          LEFT JOIN oddaja_naloge od ON dn.naloga_id = od.naloga_id
-                          LEFT JOIN dijak_predmet dp ON p.predmet_id = dp.predmet_id
+                          JOIN dijaki d ON od.id_dijaka = d.id_dijaka
+                          JOIN razred r ON d.razred_id = r.razred_id
                           WHERE pp.profesor_id = :profesor_id
-                          GROUP BY dn.naloga_id, dn.naslov, dn.navodila, dn.datum_objave, dn.rok, p.ime_predmeta
-                          ORDER BY dn.datum_objave DESC");
+                          ORDER BY 
+                            CASE 
+                              WHEN od.status = 'oddano' THEN 1
+                              WHEN od.status = 'pregledano' THEN 2
+                              ELSE 3
+                            END,
+                            od.datum_objave DESC");
     $stmt->execute(['profesor_id' => $profesor_id]);
-    $naloge = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $oddaje = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
-    $naloge = [];
+    $oddaje = [];
     error_log($e->getMessage());
+}
+
+// Ločimo oddaje po statusu
+$oddaje_za_pregled = [];
+$pregledane = [];
+foreach ($oddaje as $oddaja) {
+    if ($oddaja['status'] === 'oddano') {
+        $oddaje_za_pregled[] = $oddaja;
+    } else {
+        $pregledane[] = $oddaja;
+    }
 }
 ?>
 <!DOCTYPE html>
@@ -95,7 +140,7 @@ try {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Domače naloge - Vnos | E-Ocene</title>
+  <title>Domače naloge - Upravljanje | E-Ocene</title>
   <style>
     * {
       box-sizing: border-box;
@@ -122,14 +167,12 @@ try {
       padding: 0 30px;
       color: white;
       box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-      position: relative;
       z-index: 100;
     }
 
     .header h1 {
       font-size: 22px;
       font-weight: bold;
-      margin: 0;
       cursor: pointer;
       transition: opacity 0.2s;
     }
@@ -140,7 +183,6 @@ try {
 
     .avatar-container {
       position: relative;
-      display: inline-block;
     }
 
     .avatar-link {
@@ -156,7 +198,6 @@ try {
       font-size: 18px;
       cursor: pointer;
       transition: transform 0.2s;
-      user-select: none;
     }
 
     .avatar-link:hover {
@@ -176,11 +217,8 @@ try {
       box-shadow: 0 2px 8px rgba(0,0,0,0.15);
       font-size: 14px;
       text-decoration: none;
-      text-align: center;
-      white-space: nowrap;
       margin-top: 8px;
       z-index: 1000;
-      transition: opacity 0.2s;
       font-weight: 500;
     }
 
@@ -204,6 +242,42 @@ try {
       font-weight: 600;
     }
 
+    .tabs {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 30px;
+      border-bottom: 2px solid #e0e0e0;
+    }
+
+    .tab {
+      padding: 12px 24px;
+      background: none;
+      border: none;
+      font-size: 16px;
+      font-weight: 500;
+      color: #666;
+      cursor: pointer;
+      border-bottom: 3px solid transparent;
+      transition: all 0.2s;
+    }
+
+    .tab:hover {
+      color: #8884FF;
+    }
+
+    .tab.active {
+      color: #8884FF;
+      border-bottom-color: #8884FF;
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
     .sporocilo {
       padding: 15px 20px;
       border-radius: 8px;
@@ -223,18 +297,38 @@ try {
       border-left: 4px solid #dc3545;
     }
 
-    .forma-container {
+    .sekcija {
       background: white;
       padding: 30px;
       border-radius: 12px;
       box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-      margin-bottom: 40px;
+      margin-bottom: 30px;
     }
 
-    .forma-container h2 {
+    .sekcija h2 {
       font-size: 20px;
       margin-bottom: 20px;
       color: #444;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .badge {
+      background: #dc3545;
+      color: white;
+      padding: 4px 12px;
+      border-radius: 15px;
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .badge.zelena {
+      background: #28a745;
+    }
+
+    .badge.modra {
+      background: #007bff;
     }
 
     .form-group {
@@ -288,20 +382,27 @@ try {
       background: #7774ee;
     }
 
-    .naloge-seznam {
-      background: white;
-      padding: 30px;
-      border-radius: 12px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    .btn-odobri {
+      background: #28a745;
+      padding: 8px 20px;
+      font-size: 14px;
     }
 
-    .naloge-seznam h2 {
-      font-size: 20px;
-      margin-bottom: 20px;
-      color: #444;
+    .btn-odobri:hover {
+      background: #218838;
     }
 
-    .naloga-card {
+    .btn-zavrni {
+      background: #dc3545;
+      padding: 8px 20px;
+      font-size: 14px;
+    }
+
+    .btn-zavrni:hover {
+      background: #c82333;
+    }
+
+    .oddaja-card {
       background: #f8f9ff;
       padding: 20px;
       border-radius: 10px;
@@ -309,27 +410,37 @@ try {
       border-left: 4px solid #8884FF;
     }
 
-    .naloga-header {
+    .oddaja-card.pregledano {
+      border-left-color: #28a745;
+      opacity: 0.8;
+    }
+
+    .oddaja-card.zavrnjeno {
+      border-left-color: #dc3545;
+      opacity: 0.8;
+    }
+
+    .oddaja-header {
       display: flex;
       justify-content: space-between;
       align-items: start;
       margin-bottom: 10px;
     }
 
-    .naloga-naslov {
-      font-size: 18px;
+    .dijak-info {
+      font-size: 16px;
       font-weight: 600;
       color: #333;
     }
 
-    .naloga-predmet {
+    .dijak-razred {
       display: inline-block;
       background: #8884FF;
       color: white;
-      padding: 4px 12px;
-      border-radius: 15px;
+      padding: 3px 10px;
+      border-radius: 12px;
       font-size: 12px;
-      margin-bottom: 8px;
+      margin-left: 8px;
     }
 
     .naloga-info {
@@ -338,42 +449,69 @@ try {
       margin: 5px 0;
     }
 
-    .naloga-navodila {
-      margin: 10px 0;
-      padding: 10px;
-      background: white;
-      border-radius: 6px;
-      font-size: 14px;
-      color: #555;
+    .status-badge {
+      display: inline-block;
+      padding: 5px 12px;
+      border-radius: 15px;
+      font-size: 12px;
+      font-weight: 600;
     }
 
-    .naloga-stats {
-      display: flex;
-      gap: 20px;
-      margin-top: 10px;
-      font-size: 13px;
+    .status-oddano {
+      background: #ffc107;
+      color: #856404;
     }
 
-    .stat {
-      color: #666;
+    .status-pregledano {
+      background: #28a745;
+      color: white;
     }
 
-    .stat strong {
-      color: #8884FF;
-    }
-
-    .btn-izbrisi {
+    .status-zavrnjeno {
       background: #dc3545;
       color: white;
-      padding: 6px 15px;
-      border-radius: 6px;
-      text-decoration: none;
-      font-size: 13px;
-      transition: background 0.2s;
     }
 
-    .btn-izbrisi:hover {
-      background: #c82333;
+    .oceni-forma {
+      margin-top: 15px;
+      padding-top: 15px;
+      border-top: 1px solid #ddd;
+    }
+
+    .oceni-forma textarea {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-size: 14px;
+      margin-bottom: 10px;
+      min-height: 80px;
+    }
+
+    .oceni-forma .gumbi {
+      display: flex;
+      gap: 10px;
+    }
+
+    .link-do-oddaje {
+      display: inline-block;
+      color: #8884FF;
+      text-decoration: none;
+      font-weight: 600;
+      margin-top: 10px;
+    }
+
+    .link-do-oddaje:hover {
+      text-decoration: underline;
+    }
+
+    .komentar-box {
+      background: #fff3cd;
+      padding: 10px;
+      border-radius: 6px;
+      margin-top: 10px;
+      font-size: 13px;
+      border-left: 3px solid #ffc107;
     }
 
     .prazen {
@@ -392,29 +530,20 @@ try {
       justify-content: center;
       font-size: 14px;
       box-shadow: 0 -2px 6px rgba(0,0,0,0.08);
-      margin-top: auto;
     }
 
     @media (max-width: 768px) {
       .vsebina {
         padding: 20px;
       }
-
       .header {
         padding: 0 20px;
       }
-
-      .header h1 {
-        font-size: 18px;
+      .tabs {
+        overflow-x: auto;
       }
-
-      .naloga-header {
+      .oceni-forma .gumbi {
         flex-direction: column;
-      }
-
-      .naloga-stats {
-        flex-direction: column;
-        gap: 5px;
       }
     }
   </style>
@@ -422,8 +551,7 @@ try {
 <body>
 
   <div class="header">
-    <h1 onclick="window.location.href='main_page.php'" style="cursor: pointer;">E-Ocene</h1>
-    
+    <h1 onclick="window.location.href='main_page.php'">E-Ocene</h1>
     <div class="avatar-container">
       <div class="avatar-link" id="avatar"><?php echo htmlspecialchars($prva_crka); ?></div>
       <a href="odjava.php" id="odjava-menu">Odjava</a>
@@ -441,81 +569,142 @@ try {
       <div class="sporocilo napaka"><?php echo htmlspecialchars($napaka); ?></div>
     <?php endif; ?>
 
-    <!-- Forma za dodajanje nove domače naloge -->
-    <div class="forma-container">
-      <h2>Dodaj novo domačo nalogo</h2>
-      <form method="POST" action="">
-        <div class="form-group">
-          <label>Predmet:</label>
-          <select name="predmet_id" required>
-            <option value="">-- Izberi predmet --</option>
-            <?php foreach ($predmeti as $predmet): ?>
-              <option value="<?php echo $predmet['predmet_id']; ?>">
-                <?php echo htmlspecialchars($predmet['ime_predmeta']); ?>
-              </option>
-            <?php endforeach; ?>
-          </select>
-        </div>
-
-        <div class="form-group">
-          <label>Naslov naloge:</label>
-          <input type="text" name="naslov" required placeholder="npr. Domača naloga 5">
-        </div>
-
-        <div class="form-group">
-          <label>Navodila:</label>
-          <textarea name="navodila" required placeholder="Vnesite navodila za domačo nalogo..."></textarea>
-        </div>
-
-        <div class="form-group">
-          <label>Rok za oddajo:</label>
-          <input type="datetime-local" name="rok" required>
-        </div>
-
-        <button type="submit" name="dodaj_nalogo" class="btn">Dodaj domačo nalogo</button>
-      </form>
+    <!-- TABS -->
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab('pregled')">Za pregled <?php if(!empty($oddaje_za_pregled)): ?><span class="badge"><?php echo count($oddaje_za_pregled); ?></span><?php endif; ?></button>
+      <button class="tab" onclick="switchTab('pregledane')">Pregledane</button>
+      <button class="tab" onclick="switchTab('dodaj')">Dodaj nalogo</button>
     </div>
 
-    <!-- Seznam obstoječih domačih nalog -->
-    <div class="naloge-seznam">
-      <h2>Vse domače naloge</h2>
+    <!-- TAB 1: ODDAJE ZA PREGLED -->
+    <div id="tab-pregled" class="tab-content active">
+      <div class="sekcija">
+        <h2>Oddaje za pregled</h2>
 
-      <?php if (empty($naloge)): ?>
-        <div class="prazen">Še nimate dodanih domačih nalog.</div>
-      <?php else: ?>
-        <?php foreach ($naloge as $naloga): ?>
-          <div class="naloga-card">
-            <span class="naloga-predmet"><?php echo htmlspecialchars($naloga['ime_predmeta']); ?></span>
-            <div class="naloga-header">
-              <div>
-                <div class="naloga-naslov"><?php echo htmlspecialchars($naloga['naslov']); ?></div>
-                <div class="naloga-info">
-                  Objavljeno: <?php echo date('d.m.Y H:i', strtotime($naloga['datum_objave'])); ?>
+        <?php if (empty($oddaje_za_pregled)): ?>
+          <div class="prazen">📭 Ni novih oddaj za pregled.</div>
+        <?php else: ?>
+          <?php foreach ($oddaje_za_pregled as $oddaja): ?>
+            <div class="oddaja-card">
+              <div class="oddaja-header">
+                <div>
+                  <div class="dijak-info">
+                    <?php echo htmlspecialchars($oddaja['ime_dijaka'] . ' ' . $oddaja['priimek_dijaka']); ?>
+                    <span class="dijak-razred"><?php echo htmlspecialchars($oddaja['razred']); ?></span>
+                  </div>
+                  <div class="naloga-info">
+                    <strong>Predmet:</strong> <?php echo htmlspecialchars($oddaja['ime_predmeta']); ?> | 
+                    <strong>Naloga:</strong> <?php echo htmlspecialchars($oddaja['naslov']); ?>
+                  </div>
+                  <div class="naloga-info">
+                    <strong>Oddano:</strong> <?php echo date('d.m.Y H:i', strtotime($oddaja['datum_objave'])); ?> | 
+                    <strong>Rok je bil:</strong> <?php echo date('d.m.Y H:i', strtotime($oddaja['rok'])); ?>
+                  </div>
                 </div>
-                <div class="naloga-info">
-                  Rok: <?php echo date('d.m.Y H:i', strtotime($naloga['rok'])); ?>
-                </div>
+                <span class="status-badge status-oddano">Oddano</span>
               </div>
-              <a href="?izbrisi=<?php echo $naloga['naloga_id']; ?>" 
-                 class="btn-izbrisi" 
-                 onclick="return confirm('Ali ste prepričani, da želite izbrisati to nalogo?')">
-                Izbriši
+
+              <a href="<?php echo htmlspecialchars($oddaja['datoteka_link']); ?>" target="_blank" class="link-do-oddaje">
+                📎 Odpri oddajo
               </a>
-            </div>
-            
-            <div class="naloga-navodila">
-              <?php echo nl2br(htmlspecialchars($naloga['navodila'])); ?>
-            </div>
 
-            <div class="naloga-stats">
-              <div class="stat">
-                Oddalo: <strong><?php echo $naloga['st_oddaj']; ?></strong> / <?php echo $naloga['st_dijakov']; ?> dijakov
-              </div>
+              <form method="POST" class="oceni-forma">
+                <input type="hidden" name="oddaja_id" value="<?php echo $oddaja['oddaja_id']; ?>">
+                <textarea name="komentar" placeholder="Komentar (opcijsko)"></textarea>
+                <div class="gumbi">
+                  <button type="submit" name="oceni_oddajo" value="pregledano" onclick="this.form.status.value='pregledano'" class="btn btn-odobri">✓ Odobri</button>
+                  <button type="submit" name="oceni_oddajo" value="zavrnjeno" onclick="this.form.status.value='zavrnjeno'" class="btn btn-zavrni">✗ Zavrni</button>
+                  <input type="hidden" name="status" value="">
+                </div>
+              </form>
             </div>
-          </div>
-        <?php endforeach; ?>
-      <?php endif; ?>
+          <?php endforeach; ?>
+        <?php endif; ?>
+      </div>
     </div>
+
+    <!-- TAB 2: PREGLEDANE ODDAJE -->
+    <div id="tab-pregledane" class="tab-content">
+      <div class="sekcija">
+        <h2>Pregledane oddaje</h2>
+
+        <?php if (empty($pregledane)): ?>
+          <div class="prazen">Še niste pregledali nobene oddaje.</div>
+        <?php else: ?>
+          <?php foreach ($pregledane as $oddaja): ?>
+            <div class="oddaja-card <?php echo $oddaja['status']; ?>">
+              <div class="oddaja-header">
+                <div>
+                  <div class="dijak-info">
+                    <?php echo htmlspecialchars($oddaja['ime_dijaka'] . ' ' . $oddaja['priimek_dijaka']); ?>
+                    <span class="dijak-razred"><?php echo htmlspecialchars($oddaja['razred']); ?></span>
+                  </div>
+                  <div class="naloga-info">
+                    <strong>Predmet:</strong> <?php echo htmlspecialchars($oddaja['ime_predmeta']); ?> | 
+                    <strong>Naloga:</strong> <?php echo htmlspecialchars($oddaja['naslov']); ?>
+                  </div>
+                  <div class="naloga-info">
+                    <strong>Pregledano:</strong> <?php echo $oddaja['datum_pregleda'] ? date('d.m.Y H:i', strtotime($oddaja['datum_pregleda'])) : '/'; ?>
+                  </div>
+                </div>
+                <span class="status-badge status-<?php echo $oddaja['status']; ?>">
+                  <?php echo $oddaja['status'] === 'pregledano' ? 'Odobreno' : 'Zavrnjeno'; ?>
+                </span>
+              </div>
+
+              <a href="<?php echo htmlspecialchars($oddaja['datoteka_link']); ?>" target="_blank" class="link-do-oddaje">
+                📎 Odpri oddajo
+              </a>
+
+              <?php if ($oddaja['komentar_profesorja']): ?>
+                <div class="komentar-box">
+                  <strong>Vaš komentar:</strong><br>
+                  <?php echo nl2br(htmlspecialchars($oddaja['komentar_profesorja'])); ?>
+                </div>
+              <?php endif; ?>
+            </div>
+          <?php endforeach; ?>
+        <?php endif; ?>
+      </div>
+    </div>
+
+    <!-- TAB 3: DODAJ NOVO NALOGO -->
+    <div id="tab-dodaj" class="tab-content">
+      <div class="sekcija">
+        <h2>Dodaj novo domačo nalogo</h2>
+        <form method="POST" action="">
+          <div class="form-group">
+            <label>Predmet:</label>
+            <select name="predmet_id" required>
+              <option value="">-- Izberi predmet --</option>
+              <?php foreach ($predmeti as $predmet): ?>
+                <option value="<?php echo $predmet['predmet_id']; ?>">
+                  <?php echo htmlspecialchars($predmet['ime_predmeta']); ?>
+                </option>
+              <?php endforeach; ?>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label>Naslov naloge:</label>
+            <input type="text" name="naslov" required placeholder="npr. Domača naloga 5">
+          </div>
+
+          <div class="form-group">
+            <label>Navodila:</label>
+            <textarea name="navodila" required placeholder="Vnesite navodila za domačo nalogo..."></textarea>
+          </div>
+
+          <div class="form-group">
+            <label>Rok za oddajo:</label>
+            <input type="datetime-local" name="rok" required>
+          </div>
+
+          <button type="submit" name="dodaj_nalogo" class="btn">Dodaj domačo nalogo</button>
+        </form>
+      </div>
+    </div>
+
   </div>
 
   <div class="footer">
@@ -523,14 +712,26 @@ try {
   </div>
 
   <script>
-    // Toggle odjava menu
+    function switchTab(tabName) {
+      // Hide all tabs
+      document.querySelectorAll('.tab-content').forEach(tab => {
+        tab.classList.remove('active');
+      });
+      document.querySelectorAll('.tab').forEach(tab => {
+        tab.classList.remove('active');
+      });
+
+      // Show selected tab
+      document.getElementById('tab-' + tabName).classList.add('active');
+      event.target.classList.add('active');
+    }
+
     document.getElementById('avatar').addEventListener('click', function(e) {
       e.stopPropagation();
       const menu = document.getElementById('odjava-menu');
       menu.style.display = (menu.style.display === 'block') ? 'none' : 'block';
     });
 
-    // Zapri menu ko klikneš izven
     document.addEventListener('click', function(event) {
       const menu = document.getElementById('odjava-menu');
       const container = document.querySelector('.avatar-container');
