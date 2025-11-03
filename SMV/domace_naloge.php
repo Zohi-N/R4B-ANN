@@ -18,9 +18,9 @@ $prva_crka = mb_strtoupper(mb_substr($ime, 0, 1, 'UTF-8'), 'UTF-8');
 $uspeh = '';
 $napaka = '';
 
-$upload_dir = 'uploads/domace_naloge/';
+$upload_dir = __DIR__ . '/uploads/domace_naloge/';
 if (!file_exists($upload_dir)) {
-    mkdir($upload_dir, 0755, true);
+    @mkdir($upload_dir, 0777, true);
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['oddaj_nalogo'])) {
