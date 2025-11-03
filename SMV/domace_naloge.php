@@ -155,24 +155,14 @@ foreach ($naloge as $naloga) {
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      margin: 0;
-      background: #f8f9ff;
+      margin: 0; background: #f8f9ff;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
-      color: #333;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
+      color: #333; min-height: 100vh; display: flex; flex-direction: column;
     }
     .header {
-      height: 70px;
-      background: linear-gradient(135deg, #8884FF, #AB64D6);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0 30px;
-      color: white;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-      z-index: 100;
+      height: 70px; background: linear-gradient(135deg, #8884FF, #AB64D6);
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 30px; color: white; box-shadow: 0 2px 6px rgba(0,0,0,0.1); z-index: 100;
     }
     .header h1 { font-size: 22px; font-weight: bold; cursor: pointer; transition: opacity 0.2s; }
     .header h1:hover { opacity: 0.9; }
@@ -180,23 +170,17 @@ foreach ($naloge as $naloga) {
     .avatar-link {
       width: 44px; height: 44px; background: white; border-radius: 50%;
       display: flex; align-items: center; justify-content: center;
-      color: #8884FF; font-weight: bold; font-size: 18px;
-      cursor: pointer; transition: transform 0.2s;
+      color: #8884FF; font-weight: bold; font-size: 18px; cursor: pointer; transition: transform 0.2s;
     }
     .avatar-link:hover { transform: scale(1.05); }
     #odjava-menu {
       display: none; position: absolute; top: 100%; left: 50%;
       transform: translateX(-50%); background: white; color: #333;
-      padding: 10px 20px; border-radius: 8px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-      font-size: 14px; text-decoration: none; margin-top: 8px;
-      z-index: 1000; font-weight: 500;
+      padding: 10px 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+      font-size: 14px; text-decoration: none; margin-top: 8px; z-index: 1000; font-weight: 500;
     }
     #odjava-menu:hover { background: #f5f5f5; color: #8884FF; }
-    .vsebina {
-      padding: 40px; flex: 1; max-width: 1200px;
-      margin: 0 auto; width: 100%;
-    }
+    .vsebina { padding: 40px; flex: 1; max-width: 1200px; margin: 0 auto; width: 100%; }
     .naslov { font-size: 28px; margin-bottom: 30px; color: #2c2c2c; font-weight: 600; }
     .sporocilo { padding: 15px 20px; border-radius: 8px; margin-bottom: 20px; font-size: 14px; }
     .uspeh { background: #d4edda; color: #155724; border-left: 4px solid #28a745; }
@@ -243,23 +227,19 @@ foreach ($naloge as $naloga) {
     .status-zavrnjeno { background: #dc3545; color: white; }
     .oddaja-forma { margin-top: 15px; padding-top: 15px; border-top: 1px solid #ddd; }
     .file-input-wrapper {
-      position: relative; display: inline-block;
-      width: 100%; margin-bottom: 10px;
+      position: relative; display: inline-block; width: 100%; margin-bottom: 10px;
     }
     .file-input-wrapper input[type="file"] {
-      position: absolute; opacity: 0; width: 100%;
-      height: 100%; cursor: pointer;
+      position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer;
     }
     .file-input-label {
       display: block; padding: 12px; background: white;
       border: 2px dashed #8884FF; border-radius: 6px;
-      text-align: center; cursor: pointer; transition: all 0.2s;
-      font-size: 14px; color: #666;
+      text-align: center; cursor: pointer; transition: all 0.2s; font-size: 14px; color: #666;
     }
     .file-input-label:hover { background: #f8f9ff; border-color: #7774ee; }
     .file-input-label.has-file {
-      background: #f8f9ff; border-style: solid;
-      color: #8884FF; font-weight: 600;
+      background: #f8f9ff; border-style: solid; color: #8884FF; font-weight: 600;
     }
     .checkbox-wrapper {
       display: flex; align-items: center; gap: 8px;
@@ -267,9 +247,7 @@ foreach ($naloge as $naloga) {
       border-radius: 6px; border-left: 3px solid #ffc107;
     }
     .checkbox-wrapper input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; }
-    .checkbox-wrapper label {
-      font-size: 13px; color: #856404; cursor: pointer; margin: 0;
-    }
+    .checkbox-wrapper label { font-size: 13px; color: #856404; cursor: pointer; margin: 0; }
     .btn {
       padding: 10px 25px; background: #8884FF; color: white;
       border: none; border-radius: 6px; font-size: 14px;
@@ -292,9 +270,8 @@ foreach ($naloge as $naloga) {
     .prazen { text-align: center; padding: 40px; color: #999; font-size: 15px; }
     .footer {
       height: 50px; background: linear-gradient(135deg, #8884FF, #AB64D6);
-      color: white; display: flex; align-items: center;
-      justify-content: center; font-size: 14px;
-      box-shadow: 0 -2px 6px rgba(0,0,0,0.08); margin-top: auto;
+      color: white; display: flex; align-items: center; justify-content: center;
+      font-size: 14px; box-shadow: 0 -2px 6px rgba(0,0,0,0.08); margin-top: auto;
     }
     @media (max-width: 768px) {
       .vsebina { padding: 20px; }
@@ -425,7 +402,7 @@ foreach ($naloge as $naloga) {
 
     <div class="sekcija">
       <h2>
-        ✓ Pregledane naloge 
+        ✔ Pregledane naloge 
         <?php if (!empty($pregledane)): ?>
           <span class="badge zelena"><?php echo count($pregledane); ?></span>
         <?php endif; ?>
@@ -441,7 +418,7 @@ foreach ($naloge as $naloga) {
             <div class="naloga-info">Rok je bil: <?php echo date('d.m.Y H:i', strtotime($naloga['rok'])); ?></div>
             
             <?php if ($naloga['status'] === 'pregledano'): ?>
-              <span class="status-badge status-pregledano">✓ Odobreno</span>
+              <span class="status-badge status-pregledano">✔ Odobreno</span>
             <?php else: ?>
               <span class="status-badge status-zavrnjeno">✗ Zavrnjeno</span>
             <?php endif; ?>
@@ -475,7 +452,7 @@ foreach ($naloge as $naloga) {
       if (input.files && input.files[0]) {
         const fileName = input.files[0].name;
         const fileSize = (input.files[0].size / 1024 / 1024).toFixed(2);
-        label.innerHTML = `✓ ${fileName}<br><small>Velikost: ${fileSize} MB</small>`;
+        label.innerHTML = `✔ ${fileName}<br><small>Velikost: ${fileSize} MB</small>`;
         label.classList.add('has-file');
       }
     }
