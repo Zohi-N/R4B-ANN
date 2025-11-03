@@ -83,6 +83,10 @@ CREATE TABLE oddaja_naloge (
     id_dijaka INT NOT NULL,
     datum_objave TIMESTAMP NOT NULL,
     datoteka_link VARCHAR(255) NOT NULL,
+    datoteka_ime VARCHAR(255) NOT NULL,                                   
+    status VARCHAR(50) DEFAULT 'oddano',
+    komentar_profesorja TEXT,
+    datum_pregleda TIMESTAMP,
     FOREIGN KEY (naloga_id) REFERENCES domača_naloga(naloga_id) ON DELETE CASCADE,
     FOREIGN KEY (id_dijaka) REFERENCES dijaki(id_dijaka) ON DELETE CASCADE
 );
