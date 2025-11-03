@@ -21,42 +21,72 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $napaka = 'Neveljaven e-poštni naslov.';
     } else {
-        try {
-            $hashed_geslo = password_hash($geslo, PASSWORD_DEFAULT);
-            $razred_lower = strtolower($razred);
-            
-            // PROFESOR ali ADMIN REGISTRACIJA
-            if ($razred_lower === 'profesor' || $razred_lower === 'admin') {
-                // Preveri če email končuje na @sola.si
-                if (!preg_match('/@sola\.si$/i', $email)) {
-                    $napaka = 'Profesor/Admin mora imeti email končnico @sola.si (npr. ime.priimek@sola.si)';
-                } else {
+        // Preveri dovoljene email domene
+        $email_parts = explode('@', $email);
+        $domena = strtolower($email_parts[1] ?? '');
+        
+        $dovoljene_domene = ['dijak.si', 'sola.si'];
+        if (!in_array($domena, $dovoljene_domene)) {
+            $napaka = 'E-poštni naslov mora biti @dijak.si ali @sola.si';
+        } else {
+            try {
+                $hashed_geslo = password_hash($geslo, PASSWORD_DEFAULT);
+                $razred_lower = strtolower($razred);
+                
+                if ($razred_lower === 'profesor') {
+                    // Preveri če email obstaja
                     $stmt = $pdo->prepare("SELECT profesor_id FROM profesorji WHERE gmail = :email");
                     $stmt->execute(['email' => $email]);
                     if ($stmt->fetch()) {
                         $napaka = 'Ta e-poštni naslov je že registriran.';
                     } else {
-                        $stmt = $pdo->prepare("INSERT INTO profesorji (ime, priimek, gmail, geslo) VALUES (:ime, :priimek, :email, :geslo)");
-                        $stmt->execute([
-                            'ime' => $ime,
-                            'priimek' => $priimek,
-                            'email' => $email,
-                            'geslo' => $hashed_geslo
-                        ]);
+                        // Začni transakcijo
+                        $pdo->beginTransaction();
                         
-                        $tip = ($razred_lower === 'admin') ? 'administrator' : 'profesor';
-                        $_SESSION['registracija_uspesna'] = "Uspešno ste se registrirali kot {$tip}! Prijavite se.";
-                        header('Location: prijava.php');
-                        exit;
+                        try {
+                            // Vstavi profesorja
+                            $stmt = $pdo->prepare("INSERT INTO profesorji (ime, priimek, gmail, geslo) VALUES (:ime, :priimek, :email, :geslo)");
+                            $stmt->execute([
+                                'ime' => $ime,
+                                'priimek' => $priimek,
+                                'email' => $email,
+                                'geslo' => $hashed_geslo
+                            ]);
+                            
+                            $novi_profesor_id = $pdo->lastInsertId();
+                            
+                            // RANDOM DODELITEV PREDMETOV PROFESORJU
+                            $vsi_predmeti = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+                            
+                            // Random izberi 2-4 predmete za profesorja
+                            $st_predmetov = rand(2, 4);
+                            shuffle($vsi_predmeti);
+                            $izbrani_predmeti = array_slice($vsi_predmeti, 0, $st_predmetov);
+                            
+                            // Vstavi predmete v profesor_predmet tabelo
+                            $insert_predmet = $pdo->prepare("INSERT INTO profesor_predmet (profesor_id, predmet_id) VALUES (:profesor_id, :predmet_id)");
+                            
+                            foreach ($izbrani_predmeti as $predmet_id) {
+                                $insert_predmet->execute([
+                                    'profesor_id' => $novi_profesor_id,
+                                    'predmet_id' => $predmet_id
+                                ]);
+                            }
+                            
+                            $pdo->commit();
+                            
+                            $_SESSION['registracija_uspesna'] = 'Uspešno ste se registrirali kot profesor! Dodeljenih vam je bilo ' . $st_predmetov . ' predmetov. Prijavite se.';
+                            header('Location: prijava.php');
+                            exit;
+                            
+                        } catch (Exception $e) {
+                            $pdo->rollBack();
+                            throw $e;
+                        }
                     }
-                }
-                
-            // DIJAK REGISTRACIJA
-            } elseif (preg_match('/^[REre][1-4][abcABC]$/', $razred)) {
-                // Preveri če email končuje na @dijak.si
-                if (!preg_match('/@dijak\.si$/i', $email)) {
-                    $napaka = 'Dijak mora imeti email končnico @dijak.si (npr. ime.priimek@dijak.si)';
-                } else {
+                    
+                } elseif (preg_match('/^[REre][1-4][abcABC]$/', $razred)) {
+                    // Preveri če email obstaja
                     $stmt = $pdo->prepare("SELECT id_dijaka FROM dijaki WHERE gmail = :email");
                     $stmt->execute(['email' => $email]);
                     if ($stmt->fetch()) {
@@ -70,30 +100,64 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         if (!$razred_data) {
                             $napaka = "Razred {$razred} ne obstaja v sistemu. Kontaktirajte administratorja.";
                         } else {
-                            $stmt = $pdo->prepare("INSERT INTO dijaki (ime_dijaka, priimek_dijaka, razred, gmail, geslo, razred_id) 
-                                                   VALUES (:ime, :priimek, :razred, :email, :geslo, :razred_id)");
-                            $stmt->execute([
-                                'ime' => $ime,
-                                'priimek' => $priimek,
-                                'razred' => $razred_upper,
-                                'email' => $email,
-                                'geslo' => $hashed_geslo,
-                                'razred_id' => $razred_data['razred_id']
-                            ]);
-                            $_SESSION['registracija_uspesna'] = 'Uspešno ste se registrirali kot dijak! Prijavite se.';
-                            header('Location: prijava.php');
-                            exit;
+                            // Začni transakcijo
+                            $pdo->beginTransaction();
+                            
+                            try {
+                                // Vstavi dijaka
+                                $stmt = $pdo->prepare("INSERT INTO dijaki (ime_dijaka, priimek_dijaka, razred, gmail, geslo, razred_id) 
+                                                       VALUES (:ime, :priimek, :razred, :email, :geslo, :razred_id)");
+                                $stmt->execute([
+                                    'ime' => $ime,
+                                    'priimek' => $priimek,
+                                    'razred' => $razred_upper,
+                                    'email' => $email,
+                                    'geslo' => $hashed_geslo,
+                                    'razred_id' => $razred_data['razred_id']
+                                ]);
+                                
+                                $novi_dijak_id = $pdo->lastInsertId();
+                                
+                                // RANDOM DODELITEV PREDMETOV
+                                $vsi_predmeti = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+                                
+                                // Random izberi 4-7 predmetov
+                                $st_predmetov = rand(4, 7);
+                                shuffle($vsi_predmeti);
+                                $izbrani_predmeti = array_slice($vsi_predmeti, 0, $st_predmetov);
+                                
+                                // Vstavi predmete v dijak_predmet tabelo
+                                $insert_predmet = $pdo->prepare("INSERT INTO dijak_predmet (id_dijaka, predmet_id) VALUES (:dijak_id, :predmet_id)");
+                                
+                                foreach ($izbrani_predmeti as $predmet_id) {
+                                    $insert_predmet->execute([
+                                        'dijak_id' => $novi_dijak_id,
+                                        'predmet_id' => $predmet_id
+                                    ]);
+                                }
+                                
+                                // Potrdi transakcijo
+                                $pdo->commit();
+                                
+                                $_SESSION['registracija_uspesna'] = 'Uspešno ste se registrirali kot dijak! Dodeljenih vam je bilo ' . $st_predmetov . ' naključnih predmetov. Prijavite se.';
+                                header('Location: prijava.php');
+                                exit;
+                                
+                            } catch (Exception $e) {
+                                $pdo->rollBack();
+                                throw $e;
+                            }
                         }
                     }
+                    
+                } else {
+                    $napaka = 'Neveljaven razred. Vnesite veljaven razred (npr. R1A, E4B) ali "profesor".';
                 }
                 
-            } else {
-                $napaka = 'Neveljaven razred. Vnesite veljaven razred (npr. R1A, E4B) ali "profesor" ali "admin".';
+            } catch (PDOException $e) {
+                $napaka = 'Napaka pri registraciji. Poskusite ponovno.';
+                error_log($e->getMessage());
             }
-            
-        } catch (PDOException $e) {
-            $napaka = 'Napaka pri registraciji. Poskusite ponovno.';
-            error_log($e->getMessage());
         }
     }
 }
@@ -135,7 +199,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     .okno {
       background: white;
       width: 100%;
-      max-width: 450px;
+      max-width: 400px;
       padding: 40px;
       border-radius: 20px;
       box-shadow: 0 5px 20px rgba(0,0,0,0.2);
@@ -189,43 +253,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       border-radius: 5px;
       border-left: 4px solid #d32f2f;
     }
-
-    .info {
-      font-size: 13px;
-      color: #666;
-      margin-top: 15px;
-      padding: 15px;
-      background: #f5f5f5;
-      border-radius: 8px;
-      text-align: left;
-      line-height: 1.8;
-    }
-
-    .info strong {
-      color: #333;
-      display: block;
-      margin-bottom: 5px;
-    }
-
-    .info code {
-      background: #e0e0e0;
-      padding: 2px 6px;
-      border-radius: 3px;
-      font-family: 'Courier New', monospace;
-      color: #d32f2f;
-      font-size: 12px;
-    }
-
-    .email-hint {
-      background: #e3f2fd;
-      padding: 12px;
-      border-radius: 5px;
-      margin-top: 12px;
-      font-size: 12px;
-      color: #1565c0;
-      border-left: 4px solid #2196f3;
-      text-align: left;
-    }
   </style>
 </head>
 <body>
@@ -245,28 +272,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       <input type="text" name="priimek_reg" placeholder="Priimek" required value="<?php echo htmlspecialchars($_POST['priimek_reg'] ?? ''); ?>">
 
       <input type="email" name="email_reg" placeholder="E-pošta" required value="<?php echo htmlspecialchars($_POST['email_reg'] ?? ''); ?>">
-      
-      <div class="email-hint">
-        <strong>📧 Pomembno - Email končnice:</strong><br>
-        • Dijaki: <code>ime.priimek@dijak.si</code><br>
-        • Profesorji: <code>ime.priimek@sola.si</code><br>
-        • Admin: <code>ime.priimek@sola.si</code>
-      </div>
 
-      <input type="text" name="razred_reg" placeholder="Razred (npr. R1A, E4C) ali 'profesor' ali 'admin'" required value="<?php echo htmlspecialchars($_POST['razred_reg'] ?? ''); ?>">
+      <input type="text" name="razred_reg" placeholder="Razred" required value="<?php echo htmlspecialchars($_POST['razred_reg'] ?? ''); ?>">
 
       <input type="password" name="geslo_reg" placeholder="Geslo (min. 10 znakov)" required>
 
       <input type="password" name="geslo2_reg" placeholder="Ponovite geslo" required>
 
       <button type="submit">Registriraj se</button>
-
-      <div class="info">
-        <strong>📝 Navodila za razred:</strong>
-        • <strong>Dijak:</strong> Vnesite razred <code>R1A</code>, <code>R2A</code>, <code>E4B</code>...<br>
-        • <strong>Profesor:</strong> Vnesite <code>profesor</code><br>
-        • <strong>Admin:</strong> Vnesite <code>admin</code>
-      </div>
     </form>
   </div>
 
