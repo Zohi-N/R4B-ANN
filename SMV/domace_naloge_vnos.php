@@ -1,210 +1,148 @@
 <?php
-// Diagnostika - dodaj na vrh, takoj po session_start()
-try {
-    $stmt = $pdo->query("SELECT current_user, current_database()");
-    $info = $stmt->fetch(PDO::FETCH_ASSOC);
-    echo "<div style='background: #fff3cd; padding: 10px; margin: 10px;'>";
-    echo "Povezan kot: " . $info['current_user'] . " na bazo: " . $info['current_database'];
-    echo "</div>";
-} catch (Exception $e) {
-    echo "<div style='background: #f8d7da; padding: 10px; margin: 10px;'>";
-    echo "Napaka: " . $e->getMessage();
-    echo "</div>";
-}
-?>
-<?php
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
 session_start();
 require_once 'database.php';
 
-if (!isset($_SESSION['uporabnik_id']) || $_SESSION['uporabnik_tip'] !== 'profesor') {
+if (!isset($_SESSION['uporabnik_id']) || $_SESSION['uporabnik_tip'] !== 'dijak') {
     header('Location: prijava.php');
     exit;
 }
 
-$profesor_id = $_SESSION['uporabnik_id'];
-$ime = $_SESSION['ime'] ?? 'Profesor';
+$dijak_id = $_SESSION['uporabnik_id'];
+$ime = $_SESSION['ime'] ?? 'Dijak';
+$priimek = $_SESSION['priimek'] ?? '';
 $prva_crka = mb_strtoupper(mb_substr($ime, 0, 1, 'UTF-8'), 'UTF-8');
 
 $uspeh = '';
 $napaka = '';
 
-// Ocenjevanje oddaje
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['oceni_oddajo'])) {
-    $oddaja_id = $_POST['oddaja_id'] ?? '';
-    $status = $_POST['oceni_oddajo'];
-    $komentar = trim($_POST['komentar'] ?? '');
-    
-    if (empty($oddaja_id) || empty($status)) {
-        $napaka = 'Status je obvezen.';
-    } else {
-        try {
-            $stmt = $pdo->prepare("UPDATE oddaja_naloge 
-                                   SET status = :status, 
-                                       komentar_profesorja = :komentar,
-                                       datum_pregleda = NOW()
-                                   WHERE oddaja_id = :oddaja_id");
-            $stmt->execute([
-                'status' => $status,
-                'komentar' => $komentar,
-                'oddaja_id' => $oddaja_id
-            ]);
-            $uspeh = 'Oddaja je bila uspešno ocenjena!';
-        } catch (PDOException $e) {
-            $napaka = 'Napaka pri ocenjevanju oddaje: ' . $e->getMessage();
-            error_log($e->getMessage());
-        }
-    }
+$upload_dir = 'uploads/domace_naloge/';
+if (!file_exists($upload_dir)) {
+    mkdir($upload_dir, 0755, true);
 }
 
-// Dodajanje nove domače naloge
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['dodaj_nalogo'])) {
-    $predmet_id = $_POST['predmet_id'] ?? '';
-    $naslov = trim($_POST['naslov'] ?? '');
-    $navodila = trim($_POST['navodila'] ?? '');
-    $rok = $_POST['rok'] ?? '';
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['oddaj_nalogo'])) {
+    $naloga_id = $_POST['naloga_id'] ?? '';
+    $naslov_naloge = $_POST['naslov_naloge'] ?? '';
+    $potrdi_povozi = isset($_POST['potrdi_povozi']) && $_POST['potrdi_povozi'] === 'da';
     
-    if (empty($predmet_id) || empty($naslov) || empty($navodila) || empty($rok)) {
-        $napaka = 'Vsa polja so obvezna.';
+    if (empty($naloga_id) || !isset($_FILES['datoteka']) || $_FILES['datoteka']['error'] === UPLOAD_ERR_NO_FILE) {
+        $napaka = 'Prosim izberite datoteko za oddajo.';
     } else {
         try {
-            // Preveri ali profesor uči ta predmet
-            $stmt = $pdo->prepare("SELECT COUNT(*) FROM profesor_predmet 
-                                   WHERE profesor_id = :profesor_id AND predmet_id = :predmet_id");
-            $stmt->execute(['profesor_id' => $profesor_id, 'predmet_id' => $predmet_id]);
+            $stmt = $pdo->prepare("SELECT oddaja_id, datoteka_ime FROM oddaja_naloge WHERE naloga_id = :naloga_id AND id_dijaka = :id_dijaka");
+            $stmt->execute(['naloga_id' => $naloga_id, 'id_dijaka' => $dijak_id]);
+            $obstojeca_oddaja = $stmt->fetch();
             
-            if ($stmt->fetchColumn() == 0) {
-                $napaka = 'Ne učite tega predmeta!';
+            if ($obstojeca_oddaja && !$potrdi_povozi) {
+                $napaka = 'To nalogo ste že oddali! Za ponovno oddajo označite potrditveno polje.';
             } else {
-                $stmt = $pdo->prepare("INSERT INTO domaca_naloga (predmet_id, naslov, navodila, datum_objave, rok) 
-                                       VALUES (:predmet_id, :naslov, :navodila, NOW(), :rok)");
-                $stmt->execute([
-                    'predmet_id' => $predmet_id,
-                    'naslov' => $naslov,
-                    'navodila' => $navodila,
-                    'rok' => $rok
-                ]);
-                $uspeh = 'Domača naloga je bila uspešno dodana!';
-            }
-        } catch (PDOException $e) {
-            $napaka = 'Napaka pri dodajanju domače naloge: ' . $e->getMessage();
-            error_log($e->getMessage());
-        }
-    }
-}
-
-// Brisanje domače naloge
-if (isset($_GET['izbrisi']) && is_numeric($_GET['izbrisi'])) {
-    $naloga_id = $_GET['izbrisi'];
-    
-    try {
-        // Preveri ali je naloga profesorjevega predmeta
-        $stmt = $pdo->prepare("SELECT dn.naloga_id 
-                              FROM domaca_naloga dn
-                              JOIN profesor_predmet pp ON dn.predmet_id = pp.predmet_id
-                              WHERE dn.naloga_id = :naloga_id AND pp.profesor_id = :profesor_id");
-        $stmt->execute(['naloga_id' => $naloga_id, 'profesor_id' => $profesor_id]);
-        
-        if ($stmt->fetch()) {
-            // Izbriši vse oddaje (datoteke)
-            $stmt = $pdo->prepare("SELECT datoteka_link FROM oddaja_naloge WHERE naloga_id = :naloga_id");
-            $stmt->execute(['naloga_id' => $naloga_id]);
-            $datoteke = $stmt->fetchAll(PDO::FETCH_COLUMN);
-            
-            foreach ($datoteke as $datoteka) {
-                if (file_exists($datoteka)) {
-                    unlink($datoteka);
+                $file = $_FILES['datoteka'];
+                
+                if ($file['error'] !== UPLOAD_ERR_OK) {
+                    throw new Exception('Napaka pri nalaganju datoteke.');
+                }
+                
+                if ($file['size'] > 10 * 1024 * 1024) {
+                    throw new Exception('Datoteka je prevelika. Maksimalna velikost je 10MB.');
+                }
+                
+                $allowed_extensions = ['pdf', 'doc', 'docx', 'txt', 'jpg', 'jpeg', 'png', 'zip', 'rar'];
+                $file_extension = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+                
+                if (!in_array($file_extension, $allowed_extensions)) {
+                    throw new Exception('Nedovoljen tip datoteke. Dovoljeni so: ' . implode(', ', $allowed_extensions));
+                }
+                
+                $safe_priimek = preg_replace('/[^a-zA-Z0-9]/', '_', $priimek);
+                $safe_ime = preg_replace('/[^a-zA-Z0-9]/', '_', $ime);
+                $safe_naslov = preg_replace('/[^a-zA-Z0-9]/', '_', $naslov_naloge);
+                $safe_naslov = substr($safe_naslov, 0, 50);
+                
+                $file_name = $safe_priimek . '_' . $safe_ime . '_' . $safe_naslov . '.' . $file_extension;
+                $file_path = $upload_dir . $file_name;
+                
+                if ($obstojeca_oddaja && !empty($obstojeca_oddaja['datoteka_ime'])) {
+                    $old_file = $upload_dir . $obstojeca_oddaja['datoteka_ime'];
+                    if (file_exists($old_file)) {
+                        unlink($old_file);
+                    }
+                }
+                
+                if (!move_uploaded_file($file['tmp_name'], $file_path)) {
+                    throw new Exception('Napaka pri shranjevanju datoteke.');
+                }
+                
+                if ($obstojeca_oddaja) {
+                    $stmt = $pdo->prepare("UPDATE oddaja_naloge 
+                                          SET datum_objave = NOW(), 
+                                              datoteka_link = :datoteka_link,
+                                              datoteka_ime = :datoteka_ime,
+                                              status = 'oddano',
+                                              komentar_profesorja = NULL,
+                                              datum_pregleda = NULL
+                                          WHERE oddaja_id = :oddaja_id");
+                    $stmt->execute([
+                        'datoteka_link' => $file_path,
+                        'datoteka_ime' => $file_name,
+                        'oddaja_id' => $obstojeca_oddaja['oddaja_id']
+                    ]);
+                    $uspeh = 'Domača naloga je bila ponovno oddana! ✔';
+                } else {
+                    $stmt = $pdo->prepare("INSERT INTO oddaja_naloge (naloga_id, id_dijaka, datum_objave, datoteka_link, datoteka_ime, status) 
+                                           VALUES (:naloga_id, :id_dijaka, NOW(), :datoteka_link, :datoteka_ime, 'oddano')");
+                    $stmt->execute([
+                        'naloga_id' => $naloga_id,
+                        'id_dijaka' => $dijak_id,
+                        'datoteka_link' => $file_path,
+                        'datoteka_ime' => $file_name
+                    ]);
+                    $uspeh = 'Domača naloga je bila uspešno oddana! ✔';
                 }
             }
-            
-            // Izbriši nalogo (CASCADE bo izbrisal oddaje)
-            $stmt = $pdo->prepare("DELETE FROM domaca_naloga WHERE naloga_id = :naloga_id");
-            $stmt->execute(['naloga_id' => $naloga_id]);
-            
-            $uspeh = 'Domača naloga je bila uspešno izbrisana!';
-        } else {
-            $napaka = 'Nimate pravice izbrisati te naloge!';
+        } catch (Exception $e) {
+            $napaka = $e->getMessage();
+        } catch (PDOException $e) {
+            $napaka = 'Napaka pri oddaji domače naloge.';
+            error_log($e->getMessage());
         }
-    } catch (PDOException $e) {
-        $napaka = 'Napaka pri brisanju domače naloge: ' . $e->getMessage();
-        error_log($e->getMessage());
     }
 }
 
-// Pridobi predmete profesorja
-try {
-    $stmt = $pdo->prepare("SELECT p.predmet_id, p.ime_predmeta 
-                          FROM predmet p
-                          JOIN profesor_predmet pp ON p.predmet_id = pp.predmet_id
-                          WHERE pp.profesor_id = :profesor_id
-                          ORDER BY p.ime_predmeta");
-    $stmt->execute(['profesor_id' => $profesor_id]);
-    $predmeti = $stmt->fetchAll(PDO::FETCH_ASSOC);
-} catch (PDOException $e) {
-    $predmeti = [];
-    error_log($e->getMessage());
-}
-
-// Pridobi vse domače naloge profesorja
 try {
     $stmt = $pdo->prepare("SELECT dn.naloga_id, dn.naslov, dn.navodila, dn.datum_objave, dn.rok,
                           p.ime_predmeta,
-                          COUNT(DISTINCT od.oddaja_id) as st_oddaj,
-                          COUNT(DISTINCT CASE WHEN od.status = 'oddano' THEN od.oddaja_id END) as st_v_pregledu
+                          od.oddaja_id, od.datum_objave as datum_oddaje, od.datoteka_link, od.datoteka_ime,
+                          od.status, od.komentar_profesorja, od.datum_pregleda
                           FROM domaca_naloga dn
                           JOIN predmet p ON dn.predmet_id = p.predmet_id
-                          JOIN profesor_predmet pp ON p.predmet_id = pp.predmet_id
-                          LEFT JOIN oddaja_naloge od ON dn.naloga_id = od.naloga_id
-                          WHERE pp.profesor_id = :profesor_id
-                          GROUP BY dn.naloga_id, dn.naslov, dn.navodila, dn.datum_objave, dn.rok, p.ime_predmeta
-                          ORDER BY dn.datum_objave DESC");
-    $stmt->execute(['profesor_id' => $profesor_id]);
-    $vse_naloge = $stmt->fetchAll(PDO::FETCH_ASSOC);
-} catch (PDOException $e) {
-    $vse_naloge = [];
-    $napaka = 'Napaka pri pridobivanju nalog: ' . $e->getMessage();
-    error_log($e->getMessage());
-}
-
-// Pridobi oddaje za pregled
-try {
-    $stmt = $pdo->prepare("SELECT od.oddaja_id, od.datum_objave, od.datoteka_link, od.datoteka_ime, od.status, 
-                          od.komentar_profesorja, od.datum_pregleda,
-                          dn.naslov, dn.rok,
-                          p.ime_predmeta,
-                          d.ime_dijaka, d.priimek_dijaka, d.gmail as dijak_email,
-                          r.oznaka as razred
-                          FROM oddaja_naloge od
-                          JOIN domaca_naloga dn ON od.naloga_id = dn.naloga_id
-                          JOIN predmet p ON dn.predmet_id = p.predmet_id
-                          JOIN profesor_predmet pp ON p.predmet_id = pp.predmet_id
-                          JOIN dijaki d ON od.id_dijaka = d.id_dijaka
-                          JOIN razred r ON d.razred_id = r.razred_id
-                          WHERE pp.profesor_id = :profesor_id
+                          JOIN dijak_predmet dp ON p.predmet_id = dp.predmet_id
+                          LEFT JOIN oddaja_naloge od ON dn.naloga_id = od.naloga_id AND od.id_dijaka = :dijak_id
+                          WHERE dp.id_dijaka = :dijak_id
                           ORDER BY 
-                            CASE 
-                              WHEN od.status = 'oddano' THEN 1
-                              WHEN od.status = 'pregledano' THEN 2
-                              ELSE 3
-                            END,
-                            od.datum_objave DESC");
-    $stmt->execute(['profesor_id' => $profesor_id]);
-    $oddaje = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                            CASE WHEN od.oddaja_id IS NULL THEN 0 ELSE 1 END,
+                            dn.rok ASC,
+                            dn.datum_objave DESC");
+    $stmt->execute(['dijak_id' => $dijak_id]);
+    $naloge = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
-    $oddaje = [];
+    $naloge = [];
     error_log($e->getMessage());
 }
 
-// Ločimo oddaje po statusu
-$oddaje_za_pregled = [];
+$neodane = [];
+$oddane_v_pregledu = [];
 $pregledane = [];
-foreach ($oddaje as $oddaja) {
-    if ($oddaja['status'] === 'oddano') {
-        $oddaje_za_pregled[] = $oddaja;
+
+foreach ($naloge as $naloga) {
+    if (!$naloga['oddaja_id']) {
+        $neodane[] = $naloga;
+    } elseif ($naloga['status'] === 'oddano') {
+        $oddane_v_pregledu[] = $naloga;
     } else {
-        $pregledane[] = $oddaja;
+        $pregledane[] = $naloga;
     }
 }
 ?>
@@ -213,7 +151,7 @@ foreach ($oddaje as $oddaja) {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Domače naloge - Upravljanje | E-Ocene</title>
+  <title>Domače naloge | E-Ocene</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -232,8 +170,7 @@ foreach ($oddaje as $oddaja) {
     .avatar-link {
       width: 44px; height: 44px; background: white; border-radius: 50%;
       display: flex; align-items: center; justify-content: center;
-      color: #8884FF; font-weight: bold; font-size: 18px;
-      cursor: pointer; transition: transform 0.2s;
+      color: #8884FF; font-weight: bold; font-size: 18px; cursor: pointer; transition: transform 0.2s;
     }
     .avatar-link:hover { transform: scale(1.05); }
     #odjava-menu {
@@ -243,18 +180,8 @@ foreach ($oddaje as $oddaja) {
       font-size: 14px; text-decoration: none; margin-top: 8px; z-index: 1000; font-weight: 500;
     }
     #odjava-menu:hover { background: #f5f5f5; color: #8884FF; }
-    .vsebina { padding: 40px; flex: 1; max-width: 1400px; margin: 0 auto; width: 100%; }
+    .vsebina { padding: 40px; flex: 1; max-width: 1200px; margin: 0 auto; width: 100%; }
     .naslov { font-size: 28px; margin-bottom: 30px; color: #2c2c2c; font-weight: 600; }
-    .tabs { display: flex; gap: 10px; margin-bottom: 30px; border-bottom: 2px solid #e0e0e0; }
-    .tab {
-      padding: 12px 24px; background: none; border: none; font-size: 16px;
-      font-weight: 500; color: #666; cursor: pointer; border-bottom: 3px solid transparent;
-      transition: all 0.2s;
-    }
-    .tab:hover { color: #8884FF; }
-    .tab.active { color: #8884FF; border-bottom-color: #8884FF; }
-    .tab-content { display: none; }
-    .tab-content.active { display: block; }
     .sporocilo { padding: 15px 20px; border-radius: 8px; margin-bottom: 20px; font-size: 14px; }
     .uspeh { background: #d4edda; color: #155724; border-left: 4px solid #28a745; }
     .napaka { background: #f8d7da; color: #721c24; border-left: 4px solid #dc3545; }
@@ -263,7 +190,7 @@ foreach ($oddaje as $oddaja) {
       box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-bottom: 30px;
     }
     .sekcija h2 {
-      font-size: 20px; margin-bottom: 20px; color: #444;
+      font-size: 22px; margin-bottom: 20px; color: #444;
       display: flex; align-items: center; gap: 10px;
     }
     .badge {
@@ -271,95 +198,86 @@ foreach ($oddaje as $oddaja) {
       border-radius: 15px; font-size: 14px; font-weight: 600;
     }
     .badge.zelena { background: #28a745; }
-    .badge.modra { background: #007bff; }
-    .form-group { margin-bottom: 20px; }
-    .form-group label {
-      display: block; margin-bottom: 8px; font-weight: 500;
-      color: #555; font-size: 14px;
-    }
-    .form-group input, .form-group select, .form-group textarea {
-      width: 100%; padding: 12px; border: 1px solid #ddd;
-      border-radius: 8px; font-size: 14px; font-family: inherit;
-    }
-    .form-group textarea { min-height: 120px; resize: vertical; }
-    .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
-      outline: none; border-color: #8884FF;
-    }
-    .btn {
-      padding: 12px 30px; background: #8884FF; color: white;
-      border: none; border-radius: 8px; font-size: 15px;
-      cursor: pointer; font-weight: 600; transition: background 0.2s;
-    }
-    .btn:hover { background: #7774ee; }
-    .btn-odobri { background: #28a745; padding: 8px 20px; font-size: 14px; }
-    .btn-odobri:hover { background: #218838; }
-    .btn-zavrni { background: #dc3545; padding: 8px 20px; font-size: 14px; }
-    .btn-zavrni:hover { background: #c82333; }
-    .btn-prenesi {
-      background: #007bff; padding: 8px 20px; font-size: 14px;
-      text-decoration: none; display: inline-block; margin-top: 10px; color: white;
-    }
-    .btn-prenesi:hover { background: #0056b3; }
-    .btn-izbrisi { background: #dc3545; padding: 8px 16px; font-size: 13px; }
-    .btn-izbrisi:hover { background: #c82333; }
-    .oddaja-card {
+    .badge.rumena { background: #ffc107; color: #856404; }
+    .naloga-card {
       background: #f8f9ff; padding: 20px; border-radius: 10px;
       margin-bottom: 15px; border-left: 4px solid #8884FF;
     }
-    .oddaja-card.pregledano { border-left-color: #28a745; opacity: 0.8; }
-    .oddaja-card.zavrnjeno { border-left-color: #dc3545; opacity: 0.8; }
-    .naloga-card {
-      background: #f8f9ff; padding: 20px; border-radius: 10px;
-      margin-bottom: 15px; border-left: 4px solid #8884FF; position: relative;
-    }
-    .oddaja-header {
-      display: flex; justify-content: space-between; align-items: start; margin-bottom: 10px;
-    }
-    .dijak-info { font-size: 16px; font-weight: 600; color: #333; }
-    .dijak-razred {
+    .naloga-card.oddana { border-left-color: #ffc107; }
+    .naloga-card.pregledano { border-left-color: #28a745; opacity: 0.85; }
+    .naloga-card.zavrnjeno { border-left-color: #dc3545; }
+    .naloga-card.zamujeno { border-left-color: #dc3545; background: #fff5f5; }
+    .naloga-predmet {
       display: inline-block; background: #8884FF; color: white;
-      padding: 3px 10px; border-radius: 12px; font-size: 12px; margin-left: 8px;
+      padding: 4px 12px; border-radius: 15px; font-size: 12px; margin-bottom: 8px;
     }
+    .naloga-naslov { font-size: 18px; font-weight: 600; color: #333; margin-bottom: 8px; }
     .naloga-info { font-size: 13px; color: #666; margin: 5px 0; }
+    .naloga-info.zamujeno { color: #dc3545; font-weight: 600; }
+    .naloga-navodila {
+      margin: 10px 0; padding: 10px; background: white;
+      border-radius: 6px; font-size: 14px; color: #555;
+    }
     .status-badge {
       display: inline-block; padding: 5px 12px; border-radius: 15px;
-      font-size: 12px; font-weight: 600;
+      font-size: 12px; font-weight: 600; margin-top: 8px;
     }
     .status-oddano { background: #ffc107; color: #856404; }
     .status-pregledano { background: #28a745; color: white; }
     .status-zavrnjeno { background: #dc3545; color: white; }
-    .oceni-forma { margin-top: 15px; padding-top: 15px; border-top: 1px solid #ddd; }
-    .oceni-forma textarea {
-      width: 100%; padding: 10px; border: 1px solid #ddd;
-      border-radius: 6px; font-size: 14px; margin-bottom: 10px; min-height: 80px;
+    .oddaja-forma { margin-top: 15px; padding-top: 15px; border-top: 1px solid #ddd; }
+    .file-input-wrapper {
+      position: relative; display: inline-block; width: 100%; margin-bottom: 10px;
     }
-    .oceni-forma .gumbi { display: flex; gap: 10px; }
-    .datoteka-info {
+    .file-input-wrapper input[type="file"] {
+      position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer;
+    }
+    .file-input-label {
+      display: block; padding: 12px; background: white;
+      border: 2px dashed #8884FF; border-radius: 6px;
+      text-align: center; cursor: pointer; transition: all 0.2s; font-size: 14px; color: #666;
+    }
+    .file-input-label:hover { background: #f8f9ff; border-color: #7774ee; }
+    .file-input-label.has-file {
+      background: #f8f9ff; border-style: solid; color: #8884FF; font-weight: 600;
+    }
+    .checkbox-wrapper {
+      display: flex; align-items: center; gap: 8px;
+      margin-bottom: 10px; padding: 10px; background: #fff3cd;
+      border-radius: 6px; border-left: 3px solid #ffc107;
+    }
+    .checkbox-wrapper input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; }
+    .checkbox-wrapper label { font-size: 13px; color: #856404; cursor: pointer; margin: 0; }
+    .btn {
+      padding: 10px 25px; background: #8884FF; color: white;
+      border: none; border-radius: 6px; font-size: 14px;
+      cursor: pointer; font-weight: 600; transition: background 0.2s; width: 100%;
+    }
+    .btn:hover { background: #7774ee; }
+    .btn:disabled { background: #ccc; cursor: not-allowed; }
+    .oddaja-info {
+      margin-top: 10px; padding: 10px; background: #fff3cd;
+      border-radius: 6px; font-size: 13px; color: #856404;
+    }
+    .oddaja-info.uspesno { background: #d4edda; color: #155724; }
+    .oddaja-info a { color: inherit; font-weight: 600; text-decoration: none; }
+    .oddaja-info a:hover { text-decoration: underline; }
+    .komentar-profesorja {
       margin-top: 10px; padding: 12px; background: white;
-      border-radius: 6px; font-size: 13px; border: 1px solid #ddd;
+      border-radius: 6px; border-left: 3px solid #8884FF; font-size: 14px;
     }
-    .datoteka-info strong { color: #8884FF; }
-    .komentar-box {
-      background: #fff3cd; padding: 10px; border-radius: 6px;
-      margin-top: 10px; font-size: 13px; border-left: 3px solid #ffc107;
-    }
+    .komentar-profesorja strong { color: #8884FF; }
     .prazen { text-align: center; padding: 40px; color: #999; font-size: 15px; }
-    .naloga-statistika { display: flex; gap: 20px; margin-top: 10px; font-size: 13px; }
-    .stat-item { display: flex; align-items: center; gap: 5px; color: #666; }
     .footer {
       height: 50px; background: linear-gradient(135deg, #8884FF, #AB64D6);
       color: white; display: flex; align-items: center; justify-content: center;
-      font-size: 14px; box-shadow: 0 -2px 6px rgba(0,0,0,0.08);
-    }
-    .debug-info {
-      background: #f0f0f0; padding: 15px; border-radius: 8px;
-      margin-bottom: 20px; font-size: 13px; font-family: monospace;
+      font-size: 14px; box-shadow: 0 -2px 6px rgba(0,0,0,0.08); margin-top: auto;
     }
     @media (max-width: 768px) {
       .vsebina { padding: 20px; }
       .header { padding: 0 20px; }
-      .tabs { overflow-x: auto; }
-      .oceni-forma .gumbi { flex-direction: column; }
+      .header h1 { font-size: 18px; }
+      .naslov { font-size: 22px; }
     }
   </style>
 </head>
@@ -373,7 +291,7 @@ foreach ($oddaje as $oddaja) {
   </div>
 
   <div class="vsebina">
-    <div class="naslov">Domače naloge - Upravljanje</div>
+    <div class="naslov">Domače naloge</div>
 
     <?php if ($uspeh): ?>
       <div class="sporocilo uspeh"><?php echo htmlspecialchars($uspeh); ?></div>
@@ -383,213 +301,203 @@ foreach ($oddaje as $oddaja) {
       <div class="sporocilo napaka"><?php echo htmlspecialchars($napaka); ?></div>
     <?php endif; ?>
 
-    <div class="tabs">
-      <button class="tab" onclick="switchTab('dodaj')">📝 Dodaj nalogo</button>
-      <button class="tab active" onclick="switchTab('upravljanje')">📋 Vse naloge (<?php echo count($vse_naloge); ?>)</button>
-      <button class="tab" onclick="switchTab('pregled')">⏳ Za pregled <?php if(!empty($oddaje_za_pregled)): ?><span class="badge"><?php echo count($oddaje_za_pregled); ?></span><?php endif; ?></button>
-      <button class="tab" onclick="switchTab('pregledane')">✅ Pregledane (<?php echo count($pregledane); ?>)</button>
-    </div>
+    <div class="sekcija">
+      <h2>
+        📝 Neodane naloge 
+        <?php if (!empty($neodane)): ?>
+          <span class="badge"><?php echo count($neodane); ?></span>
+        <?php endif; ?>
+      </h2>
 
-    <!-- TAB 1: DODAJ NOVO NALOGO -->
-    <div id="tab-dodaj" class="tab-content">
-      <div class="sekcija">
-        <h2>Dodaj novo domačo nalogo</h2>
-        <form method="POST" action="">
-          <div class="form-group">
-            <label>Predmet:</label>
-            <select name="predmet_id" required>
-              <option value="">-- Izberi predmet --</option>
-              <?php foreach ($predmeti as $predmet): ?>
-                <option value="<?php echo $predmet['predmet_id']; ?>">
-                  <?php echo htmlspecialchars($predmet['ime_predmeta']); ?>
-                </option>
-              <?php endforeach; ?>
-            </select>
-          </div>
+      <?php if (empty($neodane)): ?>
+        <div class="prazen">🎉 Trenutno nimate nobene neodane domače naloge!</div>
+      <?php else: ?>
+        <?php foreach ($neodane as $naloga): 
+          $je_zamujeno = strtotime($naloga['rok']) < time();
+        ?>
+          <div class="naloga-card <?php echo $je_zamujeno ? 'zamujeno' : ''; ?>">
+            <span class="naloga-predmet"><?php echo htmlspecialchars($naloga['ime_predmeta']); ?></span>
+            <div class="naloga-naslov"><?php echo htmlspecialchars($naloga['naslov']); ?></div>
+            <div class="naloga-info">Objavljeno: <?php echo date('d.m.Y H:i', strtotime($naloga['datum_objave'])); ?></div>
+            <div class="naloga-info <?php echo $je_zamujeno ? 'zamujeno' : ''; ?>">
+              Rok: <?php echo date('d.m.Y H:i', strtotime($naloga['rok'])); ?>
+              <?php if ($je_zamujeno): ?>⚠️ ZAMUJENO<?php endif; ?>
+            </div>
+            <div class="naloga-navodila">
+              <strong>Navodila:</strong><br><?php echo nl2br(htmlspecialchars($naloga['navodila'])); ?>
+            </div>
 
-          <div class="form-group">
-            <label>Naslov naloge:</label>
-            <input type="text" name="naslov" required placeholder="npr. Domača naloga 5">
-          </div>
-
-          <div class="form-group">
-            <label>Navodila:</label>
-            <textarea name="navodila" required placeholder="Vnesite navodila za domačo nalogo..."></textarea>
-          </div>
-
-          <div class="form-group">
-            <label>Rok za oddajo:</label>
-            <input type="datetime-local" name="rok" required>
-          </div>
-
-          <button type="submit" name="dodaj_nalogo" class="btn">✅ Dodaj domačo nalogo</button>
-        </form>
-      </div>
-    </div>
-
-    <!-- TAB 2: UPRAVLJANJE NALOG -->
-    <div id="tab-upravljanje" class="tab-content active">
-      <div class="sekcija">
-        <h2>Vse domače naloge</h2>
-
-        <?php if (empty($vse_naloge)): ?>
-          <div class="prazen">📭 Še niste dodali nobene domače naloge.</div>
-        <?php else: ?>
-          <?php foreach ($vse_naloge as $naloga): ?>
-            <div class="naloga-card">
-              <div class="oddaja-header">
-                <div style="flex: 1;">
-                  <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 5px;">
-                    <span class="dijak-razred"><?php echo htmlspecialchars($naloga['ime_predmeta']); ?></span>
-                    <strong style="font-size: 16px;"><?php echo htmlspecialchars($naloga['naslov']); ?></strong>
-                  </div>
-                  <div class="naloga-info">
-                    <strong>Objavljeno:</strong> <?php echo date('d.m.Y H:i', strtotime($naloga['datum_objave'])); ?> | 
-                    <strong>Rok:</strong> <?php echo date('d.m.Y H:i', strtotime($naloga['rok'])); ?>
-                    <?php if (strtotime($naloga['rok']) < time()): ?>
-                      <span style="color: #dc3545; font-weight: 600;"> (ROK POTEKEL)</span>
-                    <?php endif; ?>
-                  </div>
-                  <div class="naloga-statistika">
-                    <div class="stat-item">
-                      📊 <strong><?php echo $naloga['st_oddaj']; ?></strong> oddaj skupaj
-                    </div>
-                    <?php if ($naloga['st_v_pregledu'] > 0): ?>
-                      <div class="stat-item" style="color: #ffc107;">
-                        ⏳ <strong><?php echo $naloga['st_v_pregledu']; ?></strong> čaka na pregled
-                      </div>
-                    <?php endif; ?>
-                  </div>
-                </div>
-                <button onclick="if(confirm('Ali ste prepričani, da želite izbrisati to nalogo? To bo izbrisalo tudi vse oddaje!')) { window.location.href='?izbrisi=<?php echo $naloga['naloga_id']; ?>'; }" class="btn btn-izbrisi">
-                  🗑️ Izbriši
-                </button>
-              </div>
+            <form method="POST" action="" enctype="multipart/form-data" class="oddaja-forma" onsubmit="return validateForm(this)">
+              <input type="hidden" name="naloga_id" value="<?php echo $naloga['naloga_id']; ?>">
+              <input type="hidden" name="naslov_naloge" value="<?php echo htmlspecialchars($naloga['naslov']); ?>">
               
-              <div style="margin-top: 10px; padding: 10px; background: white; border-radius: 6px; font-size: 13px;">
-                <strong>Navodila:</strong><br>
-                <?php echo nl2br(htmlspecialchars($naloga['navodila'])); ?>
+              <div class="file-input-wrapper">
+                <input type="file" name="datoteka" id="file_<?php echo $naloga['naloga_id']; ?>" required 
+                       accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png,.zip,.rar" onchange="updateFileName(this)">
+                <label for="file_<?php echo $naloga['naloga_id']; ?>" class="file-input-label" id="label_<?php echo $naloga['naloga_id']; ?>">
+                  📎 Kliknite za izbiro datoteke<br>
+                  <small>Dovoljeni formati: PDF, DOC, DOCX, TXT, JPG, PNG, ZIP, RAR (maks. 10MB)</small>
+                </label>
               </div>
-            </div>
-          <?php endforeach; ?>
-        <?php endif; ?>
-      </div>
+              <button type="submit" name="oddaj_nalogo" class="btn">Oddaj nalogo</button>
+            </form>
+          </div>
+        <?php endforeach; ?>
+      <?php endif; ?>
     </div>
 
-    <!-- TAB 3: ODDAJE ZA PREGLED -->
-    <div id="tab-pregled" class="tab-content">
-      <div class="sekcija">
-        <h2>Oddaje za pregled</h2>
-
-        <?php if (empty($oddaje_za_pregled)): ?>
-          <div class="prazen">🔭 Ni novih oddaj za pregled.</div>
-        <?php else: ?>
-          <?php foreach ($oddaje_za_pregled as $oddaja): ?>
-            <div class="oddaja-card">
-              <div class="oddaja-header">
-                <div>
-                  <div class="dijak-info">
-                    <?php echo htmlspecialchars($oddaja['ime_dijaka'] . ' ' . $oddaja['priimek_dijaka']); ?>
-                    <span class="dijak-razred"><?php echo htmlspecialchars($oddaja['razred']); ?></span>
-                  </div>
-                  <div class="naloga-info">
-                    <strong>Predmet:</strong> <?php echo htmlspecialchars($oddaja['ime_predmeta']); ?> | 
-                    <strong>Naloga:</strong> <?php echo htmlspecialchars($oddaja['naslov']); ?>
-                  </div>
-                  <div class="naloga-info">
-                    <strong>Oddano:</strong> <?php echo date('d.m.Y H:i', strtotime($oddaja['datum_objave'])); ?> | 
-                    <strong>Rok je bil:</strong> <?php echo date('d.m.Y H:i', strtotime($oddaja['rok'])); ?>
-                  </div>
-                </div>
-                <span class="status-badge status-oddano">Oddano</span>
-              </div>
-
-              <div class="datoteka-info">
-                <strong>📎 Oddana datoteka:</strong> <?php echo htmlspecialchars($oddaja['datoteka_ime']); ?><br>
-                <a href="<?php echo htmlspecialchars($oddaja['datoteka_link']); ?>" download class="btn btn-prenesi">
-                  ⬇️ Prenesi datoteko
-                </a>
-              </div>
-
-              <form method="POST" class="oceni-forma">
-                <input type="hidden" name="oddaja_id" value="<?php echo $oddaja['oddaja_id']; ?>">
-                <textarea name="komentar" placeholder="Komentar (opcijsko)"></textarea>
-                <div class="gumbi">
-                  <button type="submit" name="oceni_oddajo" value="pregledano" class="btn btn-odobri">✓ Odobri</button>
-                  <button type="submit" name="oceni_oddajo" value="zavrnjeno" class="btn btn-zavrni">✗ Zavrni</button>
-                </div>
-              </form>
-            </div>
-          <?php endforeach; ?>
+    <div class="sekcija">
+      <h2>
+        ⏳ V pregledu 
+        <?php if (!empty($oddane_v_pregledu)): ?>
+          <span class="badge rumena"><?php echo count($oddane_v_pregledu); ?></span>
         <?php endif; ?>
-      </div>
+      </h2>
+
+      <?php if (empty($oddane_v_pregledu)): ?>
+        <div class="prazen">Ni nalog v pregledu.</div>
+      <?php else: ?>
+        <?php foreach ($oddane_v_pregledu as $naloga): ?>
+          <div class="naloga-card oddana">
+            <span class="naloga-predmet"><?php echo htmlspecialchars($naloga['ime_predmeta']); ?></span>
+            <div class="naloga-naslov"><?php echo htmlspecialchars($naloga['naslov']); ?></div>
+            <div class="naloga-info">Rok je bil: <?php echo date('d.m.Y H:i', strtotime($naloga['rok'])); ?></div>
+            <span class="status-badge status-oddano">⏳ Čaka na pregled</span>
+
+            <div class="oddaja-info">
+              ✅ <strong>Oddano:</strong> <?php echo date('d.m.Y H:i', strtotime($naloga['datum_oddaje'])); ?><br>
+              📎 <strong>Datoteka:</strong> <a href="<?php echo htmlspecialchars($naloga['datoteka_link']); ?>" download>
+                <?php echo htmlspecialchars($naloga['datoteka_ime']); ?>
+              </a>
+            </div>
+
+            <form method="POST" action="" enctype="multipart/form-data" class="oddaja-forma" onsubmit="return validateResubmit(this)">
+              <input type="hidden" name="naloga_id" value="<?php echo $naloga['naloga_id']; ?>">
+              <input type="hidden" name="naslov_naloge" value="<?php echo htmlspecialchars($naloga['naslov']); ?>">
+              
+              <div class="file-input-wrapper">
+                <input type="file" name="datoteka" id="refile_<?php echo $naloga['naloga_id']; ?>"
+                       accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png,.zip,.rar"
+                       onchange="updateFileName(this); showCheckbox(<?php echo $naloga['naloga_id']; ?>)">
+                <label for="refile_<?php echo $naloga['naloga_id']; ?>" class="file-input-label" id="relabel_<?php echo $naloga['naloga_id']; ?>">
+                  🔄 Želite ponovno oddati? Kliknite za izbiro nove datoteke
+                </label>
+              </div>
+
+              <div class="checkbox-wrapper" id="checkbox_<?php echo $naloga['naloga_id']; ?>" style="display: none;">
+                <input type="checkbox" name="potrdi_povozi" value="da" id="potrdi_<?php echo $naloga['naloga_id']; ?>" required>
+                <label for="potrdi_<?php echo $naloga['naloga_id']; ?>">
+                  ⚠️ Potrjujem, da želim zamenjati obstoječo oddajo z novo datoteko
+                </label>
+              </div>
+
+              <button type="submit" name="oddaj_nalogo" class="btn" id="btn_<?php echo $naloga['naloga_id']; ?>" style="display: none;">
+                Ponovno oddaj nalogo
+              </button>
+            </form>
+          </div>
+        <?php endforeach; ?>
+      <?php endif; ?>
     </div>
 
-    <!-- TAB 4: PREGLEDANE ODDAJE -->
-    <div id="tab-pregledane" class="tab-content">
-      <div class="sekcija">
-        <h2>Pregledane oddaje</h2>
-
-        <?php if (empty($pregledane)): ?>
-          <div class="prazen">Še niste pregledali nobene oddaje.</div>
-        <?php else: ?>
-          <?php foreach ($pregledane as $oddaja): ?>
-            <div class="oddaja-card <?php echo $oddaja['status']; ?>">
-              <div class="oddaja-header">
-                <div>
-                  <div class="dijak-info">
-                    <?php echo htmlspecialchars($oddaja['ime_dijaka'] . ' ' . $oddaja['priimek_dijaka']); ?>
-                    <span class="dijak-razred"><?php echo htmlspecialchars($oddaja['razred']); ?></span>
-                  </div>
-                  <div class="naloga-info">
-                    <strong>Predmet:</strong> <?php echo htmlspecialchars($oddaja['ime_predmeta']); ?> | 
-                    <strong>Naloga:</strong> <?php echo htmlspecialchars($oddaja['naslov']); ?>
-                  </div>
-                  <div class="naloga-info">
-                    <strong>Pregledano:</strong> <?php echo $oddaja['datum_pregleda'] ? date('d.m.Y H:i', strtotime($oddaja['datum_pregleda'])) : '/'; ?>
-                  </div>
-                </div>
-                <span class="status-badge status-<?php echo $oddaja['status']; ?>">
-                  <?php echo $oddaja['status'] === 'pregledano' ? 'Odobreno' : 'Zavrnjeno'; ?>
-                </span>
-              </div>
-
-              <div class="datoteka-info">
-                <strong>📎 Oddana datoteka:</strong> <?php echo htmlspecialchars($oddaja['datoteka_ime']); ?><br>
-                <a href="<?php echo htmlspecialchars($oddaja['datoteka_link']); ?>" download class="btn btn-prenesi">
-                  ⬇️ Prenesi datoteko
-                </a>
-              </div>
-
-              <?php if ($oddaja['komentar_profesorja']): ?>
-                <div class="komentar-box">
-                  <strong>Vaš komentar:</strong><br>
-                  <?php echo nl2br(htmlspecialchars($oddaja['komentar_profesorja'])); ?>
-                </div>
-              <?php endif; ?>
-            </div>
-          <?php endforeach; ?>
+    <div class="sekcija">
+      <h2>
+        ✔ Pregledane naloge 
+        <?php if (!empty($pregledane)): ?>
+          <span class="badge zelena"><?php echo count($pregledane); ?></span>
         <?php endif; ?>
-      </div>
-    </div>
+      </h2>
 
+      <?php if (empty($pregledane)): ?>
+        <div class="prazen">Ni še nobene pregledane naloge.</div>
+      <?php else: ?>
+        <?php foreach ($pregledane as $naloga): ?>
+          <div class="naloga-card <?php echo $naloga['status']; ?>">
+            <span class="naloga-predmet"><?php echo htmlspecialchars($naloga['ime_predmeta']); ?></span>
+            <div class="naloga-naslov"><?php echo htmlspecialchars($naloga['naslov']); ?></div>
+            <div class="naloga-info">Rok je bil: <?php echo date('d.m.Y H:i', strtotime($naloga['rok'])); ?></div>
+            
+            <?php if ($naloga['status'] === 'pregledano'): ?>
+              <span class="status-badge status-pregledano">✔ Odobreno</span>
+            <?php else: ?>
+              <span class="status-badge status-zavrnjeno">✗ Zavrnjeno</span>
+            <?php endif; ?>
+
+            <div class="oddaja-info <?php echo $naloga['status'] === 'pregledano' ? 'uspesno' : ''; ?>">
+              <strong>Oddano:</strong> <?php echo date('d.m.Y H:i', strtotime($naloga['datum_oddaje'])); ?><br>
+              <strong>Pregledano:</strong> <?php echo $naloga['datum_pregleda'] ? date('d.m.Y H:i', strtotime($naloga['datum_pregleda'])) : '/'; ?><br>
+              📎 <strong>Datoteka:</strong> <a href="<?php echo htmlspecialchars($naloga['datoteka_link']); ?>" download>
+                <?php echo htmlspecialchars($naloga['datoteka_ime']); ?>
+              </a>
+            </div>
+
+            <?php if ($naloga['komentar_profesorja']): ?>
+              <div class="komentar-profesorja">
+                <strong>💬 Komentar profesorja:</strong><br>
+                <?php echo nl2br(htmlspecialchars($naloga['komentar_profesorja'])); ?>
+              </div>
+            <?php endif; ?>
+          </div>
+        <?php endforeach; ?>
+      <?php endif; ?>
+    </div>
   </div>
 
-  <div class="footer">
-    &copy; 2025 E-Ocene. Vse pravice pridržane.
-  </div>
+  <div class="footer">&copy; 2025 E-Ocene. Vse pravice pridržane.</div>
 
   <script>
-    function switchTab(tabName) {
-      document.querySelectorAll('.tab-content').forEach(tab => {
-        tab.classList.remove('active');
-      });
-      document.querySelectorAll('.tab').forEach(tab => {
-        tab.classList.remove('active');
-      });
+    function updateFileName(input) {
+      const label = document.getElementById('label_' + input.id.split('_')[1]) || 
+                    document.getElementById('relabel_' + input.id.split('_')[1]);
+      if (input.files && input.files[0]) {
+        const fileName = input.files[0].name;
+        const fileSize = (input.files[0].size / 1024 / 1024).toFixed(2);
+        label.innerHTML = `✔ ${fileName}<br><small>Velikost: ${fileSize} MB</small>`;
+        label.classList.add('has-file');
+      }
+    }
 
-      document.getElementById('tab-' + tabName).classList.add('active');
-      event.target.classList.add('active');
+    function showCheckbox(naloagId) {
+      document.getElementById('checkbox_' + naloagId).style.display = 'flex';
+      document.getElementById('btn_' + naloagId).style.display = 'block';
+    }
+
+    function validateForm(form) {
+      const fileInput = form.querySelector('input[type="file"]');
+      if (!fileInput.files || !fileInput.files[0]) {
+        alert('Prosim izberite datoteko za oddajo.');
+        return false;
+      }
+      
+      const fileSize = fileInput.files[0].size / 1024 / 1024;
+      if (fileSize > 10) {
+        alert('Datoteka je prevelika. Maksimalna velikost je 10MB.');
+        return false;
+      }
+      
+      return true;
+    }
+
+    function validateResubmit(form) {
+      const fileInput = form.querySelector('input[type="file"]');
+      if (!fileInput.files || !fileInput.files[0]) {
+        alert('Prosim izberite datoteko za oddajo.');
+        return false;
+      }
+      
+      const fileSize = fileInput.files[0].size / 1024 / 1024;
+      if (fileSize > 10) {
+        alert('Datoteka je prevelika. Maksimalna velikost je 10MB.');
+        return false;
+      }
+
+      const checkbox = form.querySelector('input[type="checkbox"]');
+      if (!checkbox.checked) {
+        alert('Prosim potrdite, da želite zamenjati obstoječo oddajo.');
+        return false;
+      }
+      
+      return confirm('Ste prepričani, da želite zamenjati obstoječo oddajo z novo datoteko?');
     }
 
     document.getElementById('avatar').addEventListener('click', function(e) {
@@ -606,6 +514,5 @@ foreach ($oddaje as $oddaja) {
       }
     });
   </script>
-
 </body>
 </html>
