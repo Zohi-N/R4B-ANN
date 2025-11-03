@@ -73,9 +73,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 ]);
                             }
                             
+                            // Pridobi imena dodeljenih predmetov
+                            $placeholders = implode(',', array_fill(0, count($izbrani_predmeti), '?'));
+                            $stmt = $pdo->prepare("SELECT ime_predmeta FROM predmet WHERE predmet_id IN ($placeholders)");
+                            $stmt->execute($izbrani_predmeti);
+                            $predmeti_imena = $stmt->fetchAll(PDO::FETCH_COLUMN);
+                            
                             $pdo->commit();
                             
-                            $_SESSION['registracija_uspesna'] = 'Uspešno ste se registrirali kot profesor! Dodeljenih vam je bilo ' . $st_predmetov . ' predmetov. Prijavite se.';
+                            $seznam_predmetov = implode(', ', $predmeti_imena);
+                            $_SESSION['registracija_uspesna'] = 'Uspešno ste se registrirali kot profesor!<br>Dodeljeni predmeti (' . $st_predmetov . '): <strong>' . $seznam_predmetov . '</strong><br>Prijavite se.';
                             header('Location: prijava.php');
                             exit;
                             
@@ -136,10 +143,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     ]);
                                 }
                                 
+                                // Pridobi imena dodeljenih predmetov
+                                $placeholders = implode(',', array_fill(0, count($izbrani_predmeti), '?'));
+                                $stmt = $pdo->prepare("SELECT ime_predmeta FROM predmet WHERE predmet_id IN ($placeholders)");
+                                $stmt->execute($izbrani_predmeti);
+                                $predmeti_imena = $stmt->fetchAll(PDO::FETCH_COLUMN);
+                                
                                 // Potrdi transakcijo
                                 $pdo->commit();
                                 
-                                $_SESSION['registracija_uspesna'] = 'Uspešno ste se registrirali kot dijak! Dodeljenih vam je bilo ' . $st_predmetov . ' naključnih predmetov. Prijavite se.';
+                                $seznam_predmetov = implode(', ', $predmeti_imena);
+                                $_SESSION['registracija_uspesna'] = 'Uspešno ste se registrirali kot dijak!<br>Dodeljeni predmeti (' . $st_predmetov . '): <strong>' . $seznam_predmetov . '</strong><br>Prijavite se.';
                                 header('Location: prijava.php');
                                 exit;
                                 
