@@ -53,15 +53,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['dodaj_nalogo'])) {
         $napaka = 'Vsa polja so obvezna.';
     } else {
         try {
-            $stmt = $pdo->prepare("INSERT INTO domača_naloga (predmet_id, naslov, navodila, datum_objave, rok) 
-                                   VALUES (:predmet_id, :naslov, :navodila, NOW(), :rok)");
-            $stmt->execute([
-                'predmet_id' => $predmet_id,
-                'naslov' => $naslov,
-                'navodila' => $navodila,
-                'rok' => $rok
-            ]);
-            $uspeh = 'Domača naloga je bila uspešno dodana!';
+            // Preveri ali profesor uči ta predmet
+            $stmt = $pdo->prepare("SELECT COUNT(*) FROM profesor_predmet 
+                                   WHERE profesor_id = :profesor_id AND predmet_id = :predmet_id");
+            $stmt->execute(['profesor_id' => $profesor_id, 'predmet_id' => $predmet_id]);
+            
+            if ($stmt->fetchColumn() == 0) {
+                $napaka = 'Ne učite tega predmeta!';
+            } else {
+                $stmt = $pdo->prepare("INSERT INTO domača_naloga (predmet_id, naslov, navodila, datum_objave, rok) 
+                                       VALUES (:predmet_id, :naslov, :navodila, NOW(), :rok)");
+                $stmt->execute([
+                    'predmet_id' => $predmet_id,
+                    'naslov' => $naslov,
+                    'navodila' => $navodila,
+                    'rok' => $rok
+                ]);
+                $uspeh = 'Domača naloga je bila uspešno dodana!';
+            }
         } catch (PDOException $e) {
             $napaka = 'Napaka pri dodajanju domače naloge.';
             error_log($e->getMessage());
@@ -69,12 +78,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['dodaj_nalogo'])) {
     }
 }
 
-// Brisanje domače naloge
+// Brisanje domače naloge - NOVO!
 if (isset($_GET['izbrisi']) && is_numeric($_GET['izbrisi'])) {
+    $naloga_id = $_GET['izbrisi'];
+    
     try {
-        $stmt = $pdo->prepare("DELETE FROM domača_naloga WHERE naloga_id = :naloga_id");
-        $stmt->execute(['naloga_id' => $_GET['izbrisi']]);
-        $uspeh = 'Domača naloga je bila uspešno izbrisana!';
+        // Preveri ali je naloga profesorjevega predmeta
+        $stmt = $pdo->prepare("SELECT dn.naloga_id 
+                              FROM domača_naloga dn
+                              JOIN profesor_predmet pp ON dn.predmet_id = pp.predmet_id
+                              WHERE dn.naloga_id = :naloga_id AND pp.profesor_id = :profesor_id");
+        $stmt->execute(['naloga_id' => $naloga_id, 'profesor_id' => $profesor_id]);
+        
+        if ($stmt->fetch()) {
+            // Izbriši vse oddaje (datoteke)
+            $stmt = $pdo->prepare("SELECT datoteka_link FROM oddaja_naloge WHERE naloga_id = :naloga_id");
+            $stmt->execute(['naloga_id' => $naloga_id]);
+            $datoteke = $stmt->fetchAll(PDO::FETCH_COLUMN);
+            
+            foreach ($datoteke as $datoteka) {
+                if (file_exists($datoteka)) {
+                    unlink($datoteka);
+                }
+            }
+            
+            // Izbriši nalogo (CASCADE bo izbrisal oddaje)
+            $stmt = $pdo->prepare("DELETE FROM domača_naloga WHERE naloga_id = :naloga_id");
+            $stmt->execute(['naloga_id' => $naloga_id]);
+            
+            $uspeh = 'Domača naloga je bila uspešno izbrisana!';
+        } else {
+            $napaka = 'Nimate pravice izbrisati te naloge!';
+        }
     } catch (PDOException $e) {
         $napaka = 'Napaka pri brisanju domače naloge.';
         error_log($e->getMessage());
@@ -92,6 +127,26 @@ try {
     $predmeti = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
     $predmeti = [];
+    error_log($e->getMessage());
+}
+
+// Pridobi vse domače naloge profesorja - NOVO!
+try {
+    $stmt = $pdo->prepare("SELECT dn.naloga_id, dn.naslov, dn.navodila, dn.datum_objave, dn.rok,
+                          p.ime_predmeta,
+                          COUNT(DISTINCT od.oddaja_id) as st_oddaj,
+                          COUNT(DISTINCT CASE WHEN od.status = 'oddano' THEN od.oddaja_id END) as st_v_pregledu
+                          FROM domača_naloga dn
+                          JOIN predmet p ON dn.predmet_id = p.predmet_id
+                          JOIN profesor_predmet pp ON p.predmet_id = pp.predmet_id
+                          LEFT JOIN oddaja_naloge od ON dn.naloga_id = od.naloga_id
+                          WHERE pp.profesor_id = :profesor_id
+                          GROUP BY dn.naloga_id, p.ime_predmeta
+                          ORDER BY dn.datum_objave DESC");
+    $stmt->execute(['profesor_id' => $profesor_id]);
+    $vse_naloge = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    $vse_naloge = [];
     error_log($e->getMessage());
 }
 
@@ -415,6 +470,16 @@ foreach ($oddaje as $oddaja) {
       background: #0056b3;
     }
 
+    .btn-izbrisi {
+      background: #dc3545;
+      padding: 8px 16px;
+      font-size: 13px;
+    }
+
+    .btn-izbrisi:hover {
+      background: #c82333;
+    }
+
     .oddaja-card {
       background: #f8f9ff;
       padding: 20px;
@@ -431,6 +496,15 @@ foreach ($oddaje as $oddaja) {
     .oddaja-card.zavrnjeno {
       border-left-color: #dc3545;
       opacity: 0.8;
+    }
+
+    .naloga-card {
+      background: #f8f9ff;
+      padding: 20px;
+      border-radius: 10px;
+      margin-bottom: 15px;
+      border-left: 4px solid #8884FF;
+      position: relative;
     }
 
     .oddaja-header {
@@ -535,6 +609,20 @@ foreach ($oddaje as $oddaja) {
       font-size: 15px;
     }
 
+    .naloga-statistika {
+      display: flex;
+      gap: 20px;
+      margin-top: 10px;
+      font-size: 13px;
+    }
+
+    .stat-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      color: #666;
+    }
+
     .footer {
       height: 50px;
       background: linear-gradient(135deg, #8884FF, #AB64D6);
@@ -587,6 +675,7 @@ foreach ($oddaje as $oddaja) {
     <div class="tabs">
       <button class="tab active" onclick="switchTab('pregled')">Za pregled <?php if(!empty($oddaje_za_pregled)): ?><span class="badge"><?php echo count($oddaje_za_pregled); ?></span><?php endif; ?></button>
       <button class="tab" onclick="switchTab('pregledane')">Pregledane</button>
+      <button class="tab" onclick="switchTab('upravljanje')">Upravljanje nalog</button>
       <button class="tab" onclick="switchTab('dodaj')">Dodaj nalogo</button>
     </div>
 
@@ -688,7 +777,56 @@ foreach ($oddaje as $oddaja) {
       </div>
     </div>
 
-    <!-- TAB 3: DODAJ NOVO NALOGO -->
+    <!-- TAB 3: UPRAVLJANJE NALOG - NOVO! -->
+    <div id="tab-upravljanje" class="tab-content">
+      <div class="sekcija">
+        <h2>Vse domače naloge</h2>
+
+        <?php if (empty($vse_naloge)): ?>
+          <div class="prazen">Še niste dodali nobene domače naloge.</div>
+        <?php else: ?>
+          <?php foreach ($vse_naloge as $naloga): ?>
+            <div class="naloga-card">
+              <div class="oddaja-header">
+                <div style="flex: 1;">
+                  <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 5px;">
+                    <span class="dijak-razred"><?php echo htmlspecialchars($naloga['ime_predmeta']); ?></span>
+                    <strong style="font-size: 16px;"><?php echo htmlspecialchars($naloga['naslov']); ?></strong>
+                  </div>
+                  <div class="naloga-info">
+                    <strong>Objavljeno:</strong> <?php echo date('d.m.Y H:i', strtotime($naloga['datum_objave'])); ?> | 
+                    <strong>Rok:</strong> <?php echo date('d.m.Y H:i', strtotime($naloga['rok'])); ?>
+                    <?php if (strtotime($naloga['rok']) < time()): ?>
+                      <span style="color: #dc3545; font-weight: 600;"> (ROK POTEKEL)</span>
+                    <?php endif; ?>
+                  </div>
+                  <div class="naloga-statistika">
+                    <div class="stat-item">
+                      📊 <strong><?php echo $naloga['st_oddaj']; ?></strong> oddaj skupaj
+                    </div>
+                    <?php if ($naloga['st_v_pregledu'] > 0): ?>
+                      <div class="stat-item" style="color: #ffc107;">
+                        ⏳ <strong><?php echo $naloga['st_v_pregledu']; ?></strong> čaka na pregled
+                      </div>
+                    <?php endif; ?>
+                  </div>
+                </div>
+                <button onclick="if(confirm('Ali ste prepričani, da želite izbrisati to nalogo? To bo izbrisalo tudi vse oddaje!')) { window.location.href='?izbrisi=<?php echo $naloga['naloga_id']; ?>'; }" class="btn btn-izbrisi">
+                  🗑️ Izbriši
+                </button>
+              </div>
+              
+              <div style="margin-top: 10px; padding: 10px; background: white; border-radius: 6px; font-size: 13px;">
+                <strong>Navodila:</strong><br>
+                <?php echo nl2br(htmlspecialchars($naloga['navodila'])); ?>
+              </div>
+            </div>
+          <?php endforeach; ?>
+        <?php endif; ?>
+      </div>
+    </div>
+
+    <!-- TAB 4: DODAJ NOVO NALOGO -->
     <div id="tab-dodaj" class="tab-content">
       <div class="sekcija">
         <h2>Dodaj novo domačo nalogo</h2>
