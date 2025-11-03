@@ -1,4 +1,8 @@
 <?php
+// ZAČASNO - za debug
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+
 session_start();
 require_once 'database.php';
 
@@ -61,7 +65,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['dodaj_nalogo'])) {
             if ($stmt->fetchColumn() == 0) {
                 $napaka = 'Ne učite tega predmeta!';
             } else {
-                $stmt = $pdo->prepare("INSERT INTO domača_naloga (predmet_id, naslov, navodila, datum_objave, rok) 
+                $stmt = $pdo->prepare("INSERT INTO domaca_naloga (predmet_id, naslov, navodila, datum_objave, rok) 
                                        VALUES (:predmet_id, :naslov, :navodila, NOW(), :rok)");
                 $stmt->execute([
                     'predmet_id' => $predmet_id,
@@ -85,7 +89,7 @@ if (isset($_GET['izbrisi']) && is_numeric($_GET['izbrisi'])) {
     try {
         // Preveri ali je naloga profesorjevega predmeta
         $stmt = $pdo->prepare("SELECT dn.naloga_id 
-                              FROM domača_naloga dn
+                              FROM domaca_naloga dn
                               JOIN profesor_predmet pp ON dn.predmet_id = pp.predmet_id
                               WHERE dn.naloga_id = :naloga_id AND pp.profesor_id = :profesor_id");
         $stmt->execute(['naloga_id' => $naloga_id, 'profesor_id' => $profesor_id]);
@@ -103,7 +107,7 @@ if (isset($_GET['izbrisi']) && is_numeric($_GET['izbrisi'])) {
             }
             
             // Izbriši nalogo (CASCADE bo izbrisal oddaje)
-            $stmt = $pdo->prepare("DELETE FROM domača_naloga WHERE naloga_id = :naloga_id");
+            $stmt = $pdo->prepare("DELETE FROM domaca_naloga WHERE naloga_id = :naloga_id");
             $stmt->execute(['naloga_id' => $naloga_id]);
             
             $uspeh = 'Domača naloga je bila uspešno izbrisana!';
@@ -136,18 +140,19 @@ try {
                           p.ime_predmeta,
                           COUNT(DISTINCT od.oddaja_id) as st_oddaj,
                           COUNT(DISTINCT CASE WHEN od.status = 'oddano' THEN od.oddaja_id END) as st_v_pregledu
-                          FROM domača_naloga dn
+                          FROM domaca_naloga dn
                           JOIN predmet p ON dn.predmet_id = p.predmet_id
                           JOIN profesor_predmet pp ON p.predmet_id = pp.predmet_id
                           LEFT JOIN oddaja_naloge od ON dn.naloga_id = od.naloga_id
                           WHERE pp.profesor_id = :profesor_id
-                          GROUP BY dn.naloga_id, p.ime_predmeta
+                          GROUP BY dn.naloga_id, dn.naslov, dn.navodila, dn.datum_objave, dn.rok, p.ime_predmeta
                           ORDER BY dn.datum_objave DESC");
     $stmt->execute(['profesor_id' => $profesor_id]);
     $vse_naloge = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
     $vse_naloge = [];
     error_log($e->getMessage());
+    echo "<!-- DEBUG: " . $e->getMessage() . " -->";
 }
 
 // Pridobi oddaje za pregled
@@ -159,7 +164,7 @@ try {
                           d.ime_dijaka, d.priimek_dijaka, d.gmail as dijak_email,
                           r.oznaka as razred
                           FROM oddaja_naloge od
-                          JOIN domača_naloga dn ON od.naloga_id = dn.naloga_id
+                          JOIN domaca_naloga dn ON od.naloga_id = dn.naloga_id
                           JOIN predmet p ON dn.predmet_id = p.predmet_id
                           JOIN profesor_predmet pp ON p.predmet_id = pp.predmet_id
                           JOIN dijaki d ON od.id_dijaka = d.id_dijaka
