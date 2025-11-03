@@ -1,4 +1,18 @@
 <?php
+// Diagnostika - dodaj na vrh, takoj po session_start()
+try {
+    $stmt = $pdo->query("SELECT current_user, current_database()");
+    $info = $stmt->fetch(PDO::FETCH_ASSOC);
+    echo "<div style='background: #fff3cd; padding: 10px; margin: 10px;'>";
+    echo "Povezan kot: " . $info['current_user'] . " na bazo: " . $info['current_database'];
+    echo "</div>";
+} catch (Exception $e) {
+    echo "<div style='background: #f8d7da; padding: 10px; margin: 10px;'>";
+    echo "Napaka: " . $e->getMessage();
+    echo "</div>";
+}
+?>
+<?php
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
