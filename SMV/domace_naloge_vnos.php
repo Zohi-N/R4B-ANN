@@ -1,5 +1,4 @@
 <?php
-// ZAČASNO - za debug
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
@@ -18,10 +17,10 @@ $prva_crka = mb_strtoupper(mb_substr($ime, 0, 1, 'UTF-8'), 'UTF-8');
 $uspeh = '';
 $napaka = '';
 
-// Ocenjevanje oddaje - POPRAVLJENO!
+// Ocenjevanje oddaje
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['oceni_oddajo'])) {
     $oddaja_id = $_POST['oddaja_id'] ?? '';
-    $status = $_POST['oceni_oddajo']; // SPREMEMBA: status vzamemo direktno iz gumba
+    $status = $_POST['oceni_oddajo'];
     $komentar = trim($_POST['komentar'] ?? '');
     
     if (empty($oddaja_id) || empty($status)) {
@@ -65,7 +64,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['dodaj_nalogo'])) {
             if ($stmt->fetchColumn() == 0) {
                 $napaka = 'Ne učite tega predmeta!';
             } else {
-                $stmt = $pdo->prepare("INSERT INTO domača_naloga (predmet_id, naslov, navodila, datum_objave, rok) 
+                $stmt = $pdo->prepare("INSERT INTO domaca_naloga (predmet_id, naslov, navodila, datum_objave, rok) 
                                        VALUES (:predmet_id, :naslov, :navodila, NOW(), :rok)");
                 $stmt->execute([
                     'predmet_id' => $predmet_id,
@@ -76,7 +75,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['dodaj_nalogo'])) {
                 $uspeh = 'Domača naloga je bila uspešno dodana!';
             }
         } catch (PDOException $e) {
-            $napaka = 'Napaka pri dodajanju domače naloge.';
+            $napaka = 'Napaka pri dodajanju domače naloge: ' . $e->getMessage();
             error_log($e->getMessage());
         }
     }
@@ -89,7 +88,7 @@ if (isset($_GET['izbrisi']) && is_numeric($_GET['izbrisi'])) {
     try {
         // Preveri ali je naloga profesorjevega predmeta
         $stmt = $pdo->prepare("SELECT dn.naloga_id 
-                              FROM domača_naloga dn
+                              FROM domaca_naloga dn
                               JOIN profesor_predmet pp ON dn.predmet_id = pp.predmet_id
                               WHERE dn.naloga_id = :naloga_id AND pp.profesor_id = :profesor_id");
         $stmt->execute(['naloga_id' => $naloga_id, 'profesor_id' => $profesor_id]);
@@ -107,7 +106,7 @@ if (isset($_GET['izbrisi']) && is_numeric($_GET['izbrisi'])) {
             }
             
             // Izbriši nalogo (CASCADE bo izbrisal oddaje)
-            $stmt = $pdo->prepare("DELETE FROM domača_naloga WHERE naloga_id = :naloga_id");
+            $stmt = $pdo->prepare("DELETE FROM domaca_naloga WHERE naloga_id = :naloga_id");
             $stmt->execute(['naloga_id' => $naloga_id]);
             
             $uspeh = 'Domača naloga je bila uspešno izbrisana!';
@@ -115,7 +114,7 @@ if (isset($_GET['izbrisi']) && is_numeric($_GET['izbrisi'])) {
             $napaka = 'Nimate pravice izbrisati te naloge!';
         }
     } catch (PDOException $e) {
-        $napaka = 'Napaka pri brisanju domače naloge.';
+        $napaka = 'Napaka pri brisanju domače naloge: ' . $e->getMessage();
         error_log($e->getMessage());
     }
 }
@@ -140,7 +139,7 @@ try {
                           p.ime_predmeta,
                           COUNT(DISTINCT od.oddaja_id) as st_oddaj,
                           COUNT(DISTINCT CASE WHEN od.status = 'oddano' THEN od.oddaja_id END) as st_v_pregledu
-                          FROM domača_naloga dn
+                          FROM domaca_naloga dn
                           JOIN predmet p ON dn.predmet_id = p.predmet_id
                           JOIN profesor_predmet pp ON p.predmet_id = pp.predmet_id
                           LEFT JOIN oddaja_naloge od ON dn.naloga_id = od.naloga_id
@@ -151,6 +150,7 @@ try {
     $vse_naloge = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
     $vse_naloge = [];
+    $napaka = 'Napaka pri pridobivanju nalog: ' . $e->getMessage();
     error_log($e->getMessage());
 }
 
@@ -163,7 +163,7 @@ try {
                           d.ime_dijaka, d.priimek_dijaka, d.gmail as dijak_email,
                           r.oznaka as razred
                           FROM oddaja_naloge od
-                          JOIN domača_naloga dn ON od.naloga_id = dn.naloga_id
+                          JOIN domaca_naloga dn ON od.naloga_id = dn.naloga_id
                           JOIN predmet p ON dn.predmet_id = p.predmet_id
                           JOIN profesor_predmet pp ON p.predmet_id = pp.predmet_id
                           JOIN dijaki d ON od.id_dijaka = d.id_dijaka
@@ -283,7 +283,7 @@ foreach ($oddaje as $oddaja) {
     .btn-zavrni:hover { background: #c82333; }
     .btn-prenesi {
       background: #007bff; padding: 8px 20px; font-size: 14px;
-      text-decoration: none; display: inline-block; margin-top: 10px;
+      text-decoration: none; display: inline-block; margin-top: 10px; color: white;
     }
     .btn-prenesi:hover { background: #0056b3; }
     .btn-izbrisi { background: #dc3545; padding: 8px 16px; font-size: 13px; }
@@ -337,6 +337,10 @@ foreach ($oddaje as $oddaja) {
       color: white; display: flex; align-items: center; justify-content: center;
       font-size: 14px; box-shadow: 0 -2px 6px rgba(0,0,0,0.08);
     }
+    .debug-info {
+      background: #f0f0f0; padding: 15px; border-radius: 8px;
+      margin-bottom: 20px; font-size: 13px; font-family: monospace;
+    }
     @media (max-width: 768px) {
       .vsebina { padding: 20px; }
       .header { padding: 0 20px; }
@@ -366,14 +370,100 @@ foreach ($oddaje as $oddaja) {
     <?php endif; ?>
 
     <div class="tabs">
-      <button class="tab active" onclick="switchTab('pregled')">Za pregled <?php if(!empty($oddaje_za_pregled)): ?><span class="badge"><?php echo count($oddaje_za_pregled); ?></span><?php endif; ?></button>
-      <button class="tab" onclick="switchTab('pregledane')">Pregledane</button>
-      <button class="tab" onclick="switchTab('upravljanje')">Upravljanje nalog</button>
-      <button class="tab" onclick="switchTab('dodaj')">Dodaj nalogo</button>
+      <button class="tab" onclick="switchTab('dodaj')">📝 Dodaj nalogo</button>
+      <button class="tab active" onclick="switchTab('upravljanje')">📋 Vse naloge (<?php echo count($vse_naloge); ?>)</button>
+      <button class="tab" onclick="switchTab('pregled')">⏳ Za pregled <?php if(!empty($oddaje_za_pregled)): ?><span class="badge"><?php echo count($oddaje_za_pregled); ?></span><?php endif; ?></button>
+      <button class="tab" onclick="switchTab('pregledane')">✅ Pregledane (<?php echo count($pregledane); ?>)</button>
     </div>
 
-    <!-- TAB 1: ODDAJE ZA PREGLED -->
-    <div id="tab-pregled" class="tab-content active">
+    <!-- TAB 1: DODAJ NOVO NALOGO -->
+    <div id="tab-dodaj" class="tab-content">
+      <div class="sekcija">
+        <h2>Dodaj novo domačo nalogo</h2>
+        <form method="POST" action="">
+          <div class="form-group">
+            <label>Predmet:</label>
+            <select name="predmet_id" required>
+              <option value="">-- Izberi predmet --</option>
+              <?php foreach ($predmeti as $predmet): ?>
+                <option value="<?php echo $predmet['predmet_id']; ?>">
+                  <?php echo htmlspecialchars($predmet['ime_predmeta']); ?>
+                </option>
+              <?php endforeach; ?>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label>Naslov naloge:</label>
+            <input type="text" name="naslov" required placeholder="npr. Domača naloga 5">
+          </div>
+
+          <div class="form-group">
+            <label>Navodila:</label>
+            <textarea name="navodila" required placeholder="Vnesite navodila za domačo nalogo..."></textarea>
+          </div>
+
+          <div class="form-group">
+            <label>Rok za oddajo:</label>
+            <input type="datetime-local" name="rok" required>
+          </div>
+
+          <button type="submit" name="dodaj_nalogo" class="btn">✅ Dodaj domačo nalogo</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- TAB 2: UPRAVLJANJE NALOG -->
+    <div id="tab-upravljanje" class="tab-content active">
+      <div class="sekcija">
+        <h2>Vse domače naloge</h2>
+
+        <?php if (empty($vse_naloge)): ?>
+          <div class="prazen">📭 Še niste dodali nobene domače naloge.</div>
+        <?php else: ?>
+          <?php foreach ($vse_naloge as $naloga): ?>
+            <div class="naloga-card">
+              <div class="oddaja-header">
+                <div style="flex: 1;">
+                  <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 5px;">
+                    <span class="dijak-razred"><?php echo htmlspecialchars($naloga['ime_predmeta']); ?></span>
+                    <strong style="font-size: 16px;"><?php echo htmlspecialchars($naloga['naslov']); ?></strong>
+                  </div>
+                  <div class="naloga-info">
+                    <strong>Objavljeno:</strong> <?php echo date('d.m.Y H:i', strtotime($naloga['datum_objave'])); ?> | 
+                    <strong>Rok:</strong> <?php echo date('d.m.Y H:i', strtotime($naloga['rok'])); ?>
+                    <?php if (strtotime($naloga['rok']) < time()): ?>
+                      <span style="color: #dc3545; font-weight: 600;"> (ROK POTEKEL)</span>
+                    <?php endif; ?>
+                  </div>
+                  <div class="naloga-statistika">
+                    <div class="stat-item">
+                      📊 <strong><?php echo $naloga['st_oddaj']; ?></strong> oddaj skupaj
+                    </div>
+                    <?php if ($naloga['st_v_pregledu'] > 0): ?>
+                      <div class="stat-item" style="color: #ffc107;">
+                        ⏳ <strong><?php echo $naloga['st_v_pregledu']; ?></strong> čaka na pregled
+                      </div>
+                    <?php endif; ?>
+                  </div>
+                </div>
+                <button onclick="if(confirm('Ali ste prepričani, da želite izbrisati to nalogo? To bo izbrisalo tudi vse oddaje!')) { window.location.href='?izbrisi=<?php echo $naloga['naloga_id']; ?>'; }" class="btn btn-izbrisi">
+                  🗑️ Izbriši
+                </button>
+              </div>
+              
+              <div style="margin-top: 10px; padding: 10px; background: white; border-radius: 6px; font-size: 13px;">
+                <strong>Navodila:</strong><br>
+                <?php echo nl2br(htmlspecialchars($naloga['navodila'])); ?>
+              </div>
+            </div>
+          <?php endforeach; ?>
+        <?php endif; ?>
+      </div>
+    </div>
+
+    <!-- TAB 3: ODDAJE ZA PREGLED -->
+    <div id="tab-pregled" class="tab-content">
       <div class="sekcija">
         <h2>Oddaje za pregled</h2>
 
@@ -421,7 +511,7 @@ foreach ($oddaje as $oddaja) {
       </div>
     </div>
 
-    <!-- TAB 2: PREGLEDANE ODDAJE -->
+    <!-- TAB 4: PREGLEDANE ODDAJE -->
     <div id="tab-pregledane" class="tab-content">
       <div class="sekcija">
         <h2>Pregledane oddaje</h2>
@@ -466,92 +556,6 @@ foreach ($oddaje as $oddaja) {
             </div>
           <?php endforeach; ?>
         <?php endif; ?>
-      </div>
-    </div>
-
-    <!-- TAB 3: UPRAVLJANJE NALOG -->
-    <div id="tab-upravljanje" class="tab-content">
-      <div class="sekcija">
-        <h2>Vse domače naloge</h2>
-
-        <?php if (empty($vse_naloge)): ?>
-          <div class="prazen">Še niste dodali nobene domače naloge.</div>
-        <?php else: ?>
-          <?php foreach ($vse_naloge as $naloga): ?>
-            <div class="naloga-card">
-              <div class="oddaja-header">
-                <div style="flex: 1;">
-                  <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 5px;">
-                    <span class="dijak-razred"><?php echo htmlspecialchars($naloga['ime_predmeta']); ?></span>
-                    <strong style="font-size: 16px;"><?php echo htmlspecialchars($naloga['naslov']); ?></strong>
-                  </div>
-                  <div class="naloga-info">
-                    <strong>Objavljeno:</strong> <?php echo date('d.m.Y H:i', strtotime($naloga['datum_objave'])); ?> | 
-                    <strong>Rok:</strong> <?php echo date('d.m.Y H:i', strtotime($naloga['rok'])); ?>
-                    <?php if (strtotime($naloga['rok']) < time()): ?>
-                      <span style="color: #dc3545; font-weight: 600;"> (ROK POTEKEL)</span>
-                    <?php endif; ?>
-                  </div>
-                  <div class="naloga-statistika">
-                    <div class="stat-item">
-                      📊 <strong><?php echo $naloga['st_oddaj']; ?></strong> oddaj skupaj
-                    </div>
-                    <?php if ($naloga['st_v_pregledu'] > 0): ?>
-                      <div class="stat-item" style="color: #ffc107;">
-                        ⏳ <strong><?php echo $naloga['st_v_pregledu']; ?></strong> čaka na pregled
-                      </div>
-                    <?php endif; ?>
-                  </div>
-                </div>
-                <button onclick="if(confirm('Ali ste prepričani, da želite izbrisati to nalogo? To bo izbrisalo tudi vse oddaje!')) { window.location.href='?izbrisi=<?php echo $naloga['naloga_id']; ?>'; }" class="btn btn-izbrisi">
-                  🗑️ Izbriši
-                </button>
-              </div>
-              
-              <div style="margin-top: 10px; padding: 10px; background: white; border-radius: 6px; font-size: 13px;">
-                <strong>Navodila:</strong><br>
-                <?php echo nl2br(htmlspecialchars($naloga['navodila'])); ?>
-              </div>
-            </div>
-          <?php endforeach; ?>
-        <?php endif; ?>
-      </div>
-    </div>
-
-    <!-- TAB 4: DODAJ NOVO NALOGO -->
-    <div id="tab-dodaj" class="tab-content">
-      <div class="sekcija">
-        <h2>Dodaj novo domačo nalogo</h2>
-        <form method="POST" action="">
-          <div class="form-group">
-            <label>Predmet:</label>
-            <select name="predmet_id" required>
-              <option value="">-- Izberi predmet --</option>
-              <?php foreach ($predmeti as $predmet): ?>
-                <option value="<?php echo $predmet['predmet_id']; ?>">
-                  <?php echo htmlspecialchars($predmet['ime_predmeta']); ?>
-                </option>
-              <?php endforeach; ?>
-            </select>
-          </div>
-
-          <div class="form-group">
-            <label>Naslov naloge:</label>
-            <input type="text" name="naslov" required placeholder="npr. Domača naloga 5">
-          </div>
-
-          <div class="form-group">
-            <label>Navodila:</label>
-            <textarea name="navodila" required placeholder="Vnesite navodila za domačo nalogo..."></textarea>
-          </div>
-
-          <div class="form-group">
-            <label>Rok za oddajo:</label>
-            <input type="datetime-local" name="rok" required>
-          </div>
-
-          <button type="submit" name="dodaj_nalogo" class="btn">Dodaj domačo nalogo</button>
-        </form>
       </div>
     </div>
 
