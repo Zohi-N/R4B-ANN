@@ -378,9 +378,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         onkeyup="proveriRazred()"
         onchange="proveriRazred()">
 
-      <!-- BOX ZA IZBIRO PREDMETOV (SAMO ZA PROFESORJE) -->
+      
       <div id="predmeti-box" class="predmeti-box <?php echo (strtolower($_POST['razred_reg'] ?? '') === 'profesor') ? 'active' : ''; ?>">
-        <h3>📚 Izberite predmete, ki jih učite</h3>
+        <h3> Izberite predmete, ki jih učite</h3>
         <div class="checkbox-group">
           <?php foreach ($vsi_predmeti as $predmet): ?>
             <div class="checkbox-item">
