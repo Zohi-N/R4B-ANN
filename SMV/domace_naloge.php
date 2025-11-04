@@ -19,8 +19,24 @@ $uspeh = '';
 $napaka = '';
 
 $upload_dir = __DIR__ . '/uploads/domace_naloge/';
+
+// Ustvari mapo z boljšim preverjanjem
 if (!file_exists($upload_dir)) {
-    @mkdir($upload_dir, 0777, true);
+    if (!mkdir($upload_dir, 0777, true)) {
+        error_log("NAPAKA: Ne morem ustvariti mape $upload_dir");
+    } else {
+        error_log("INFO: Mapa $upload_dir uspešno ustvarjena");
+    }
+}
+
+// Preveri pravice
+if (is_dir($upload_dir)) {
+    if (!is_writable($upload_dir)) {
+        error_log("OPOZORILO: Mapa $upload_dir ni zapisljiva! Poskušam popraviti pravice...");
+        @chmod($upload_dir, 0777);
+    }
+} else {
+    error_log("KRITIČNA NAPAKA: Mapa $upload_dir ne obstaja!");
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['oddaj_nalogo'])) {
@@ -72,8 +88,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['oddaj_nalogo'])) {
                 }
                 
                 if (!move_uploaded_file($file['tmp_name'], $file_path)) {
-                    throw new Exception('Napaka pri shranjevanju datoteke.');
+                    // Zabelež podrobnosti napake
+                    $error_details = [
+                        'tmp_name' => $file['tmp_name'],
+                        'target_path' => $file_path,
+                        'tmp_exists' => file_exists($file['tmp_name']) ? 'DA' : 'NE',
+                        'dir_exists' => is_dir($upload_dir) ? 'DA' : 'NE',
+                        'dir_writable' => is_writable($upload_dir) ? 'DA' : 'NE'
+                    ];
+                    error_log("NAPAKA PRI PREMIKANJU DATOTEKE: " . json_encode($error_details));
+                    throw new Exception('Napaka pri shranjevanju datoteke. Preverite pravice mape ali kontaktirajte administratorja.');
                 }
+                
+                // Uspešno shranjeno
+                error_log("USPEH: Datoteka $file_name uspešno shranjena v $file_path");
                 
                 if ($obstojeca_oddaja) {
                     $stmt = $pdo->prepare("UPDATE oddaja_naloge 
