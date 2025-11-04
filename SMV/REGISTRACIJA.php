@@ -3,6 +3,15 @@ session_start();
 require_once 'database.php';
 
 $napaka = '';
+$vsi_predmeti = [];
+
+// Pridobi vse razpoložljive predmete za prikaz v formi
+try {
+    $stmt = $pdo->query("SELECT predmet_id, ime_predmeta FROM predmet ORDER BY ime_predmeta");
+    $vsi_predmeti = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    error_log($e->getMessage());
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $ime = trim($_POST['ime_reg'] ?? '');
@@ -11,6 +20,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $razred = trim($_POST['razred_reg'] ?? '');
     $geslo = $_POST['geslo_reg'] ?? '';
     $geslo2 = $_POST['geslo2_reg'] ?? '';
+    $izbrani_predmeti = $_POST['predmeti'] ?? [];
     
     if (empty($ime) || empty($priimek) || empty($email) || empty($razred) || empty($geslo)) {
         $napaka = 'Vsa polja so obvezna.';
@@ -33,53 +43,56 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $razred_lower = strtolower($razred);
                 
                 if ($razred_lower === 'profesor') {
-                    $stmt = $pdo->prepare("SELECT profesor_id FROM profesorji WHERE gmail = :email");
-                    $stmt->execute(['email' => $email]);
-                    if ($stmt->fetch()) {
-                        $napaka = 'Ta e-poštni naslov je že registriran.';
+                    // PREVERI ČE JE IZBRAL VSAJ EN PREDMET
+                    if (empty($izbrani_predmeti)) {
+                        $napaka = 'Profesor mora izbrati vsaj en predmet, ki ga uči.';
                     } else {
-                        $pdo->beginTransaction();
-                        
-                        try {
-                            $stmt = $pdo->prepare("INSERT INTO profesorji (ime, priimek, gmail, geslo) VALUES (:ime, :priimek, :email, :geslo)");
-                            $stmt->execute([
-                                'ime' => $ime,
-                                'priimek' => $priimek,
-                                'email' => $email,
-                                'geslo' => $hashed_geslo
-                            ]);
+                        $stmt = $pdo->prepare("SELECT profesor_id FROM profesorji WHERE gmail = :email");
+                        $stmt->execute(['email' => $email]);
+                        if ($stmt->fetch()) {
+                            $napaka = 'Ta e-poštni naslov je že registriran.';
+                        } else {
+                            $pdo->beginTransaction();
                             
-                            $novi_profesor_id = $pdo->lastInsertId();
-                            
-                            $vsi_predmeti = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
-                            $st_predmetov = rand(2, 4);
-                            shuffle($vsi_predmeti);
-                            $izbrani_predmeti = array_slice($vsi_predmeti, 0, $st_predmetov);
-                            
-                            $insert_predmet = $pdo->prepare("INSERT INTO profesor_predmet (profesor_id, predmet_id) VALUES (:profesor_id, :predmet_id)");
-                            
-                            foreach ($izbrani_predmeti as $predmet_id) {
-                                $insert_predmet->execute([
-                                    'profesor_id' => $novi_profesor_id,
-                                    'predmet_id' => $predmet_id
+                            try {
+                                $stmt = $pdo->prepare("INSERT INTO profesorji (ime, priimek, gmail, geslo) VALUES (:ime, :priimek, :email, :geslo)");
+                                $stmt->execute([
+                                    'ime' => $ime,
+                                    'priimek' => $priimek,
+                                    'email' => $email,
+                                    'geslo' => $hashed_geslo
                                 ]);
+                                
+                                $novi_profesor_id = $pdo->lastInsertId();
+                                
+                                // DODAJ IZBRANE PREDMETE
+                                $insert_predmet = $pdo->prepare("INSERT INTO profesor_predmet (profesor_id, predmet_id) VALUES (:profesor_id, :predmet_id)");
+                                
+                                foreach ($izbrani_predmeti as $predmet_id) {
+                                    $insert_predmet->execute([
+                                        'profesor_id' => $novi_profesor_id,
+                                        'predmet_id' => (int)$predmet_id
+                                    ]);
+                                }
+                                
+                                // PRIDOBI IMENA IZBRANIH PREDMETOV
+                                $placeholders = implode(',', array_fill(0, count($izbrani_predmeti), '?'));
+                                $stmt = $pdo->prepare("SELECT ime_predmeta FROM predmet WHERE predmet_id IN ($placeholders)");
+                                $stmt->execute($izbrani_predmeti);
+                                $predmeti_imena = $stmt->fetchAll(PDO::FETCH_COLUMN);
+                                
+                                $pdo->commit();
+                                
+                                $seznam_predmetov = implode(', ', $predmeti_imena);
+                                $st_predmetov = count($predmeti_imena);
+                                $_SESSION['registracija_uspesna'] = 'Uspešno ste se registrirali kot profesor!<br>Izbrani predmeti (' . $st_predmetov . '): <strong>' . $seznam_predmetov . '</strong><br>Prijavite se.';
+                                header('Location: prijava.php');
+                                exit;
+                                
+                            } catch (Exception $e) {
+                                $pdo->rollBack();
+                                throw $e;
                             }
-                            
-                            $placeholders = implode(',', array_fill(0, count($izbrani_predmeti), '?'));
-                            $stmt = $pdo->prepare("SELECT ime_predmeta FROM predmet WHERE predmet_id IN ($placeholders)");
-                            $stmt->execute($izbrani_predmeti);
-                            $predmeti_imena = $stmt->fetchAll(PDO::FETCH_COLUMN);
-                            
-                            $pdo->commit();
-                            
-                            $seznam_predmetov = implode(', ', $predmeti_imena);
-                            $_SESSION['registracija_uspesna'] = 'Uspešno ste se registrirali kot profesor!<br>Dodeljeni predmeti (' . $st_predmetov . '): <strong>' . $seznam_predmetov . '</strong><br>Prijavite se.';
-                            header('Location: prijava.php');
-                            exit;
-                            
-                        } catch (Exception $e) {
-                            $pdo->rollBack();
-                            throw $e;
                         }
                     }
                     
@@ -210,11 +223,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     .okno {
       background: white;
       width: 100%;
-      max-width: 400px;
+      max-width: 500px;
       padding: 40px;
       border-radius: 20px;
       box-shadow: 0 5px 20px rgba(0,0,0,0.2);
       text-align: center;
+      max-height: 90vh;
+      overflow-y: auto;
     }
 
     h2 {
@@ -264,7 +279,76 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       border-radius: 5px;
       border-left: 4px solid #d32f2f;
     }
+
+    .predmeti-box {
+      display: none;
+      background: #f9f9f9;
+      padding: 15px;
+      border-radius: 8px;
+      margin: 15px 0;
+      border: 1px solid #ddd;
+      text-align: left;
+    }
+
+    .predmeti-box.active {
+      display: block;
+    }
+
+    .predmeti-box h3 {
+      margin-top: 0;
+      color: #333;
+      font-size: 16px;
+      margin-bottom: 15px;
+      text-align: center;
+    }
+
+    .checkbox-group {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+    }
+
+    .checkbox-item {
+      display: flex;
+      align-items: center;
+    }
+
+    .checkbox-item input[type="checkbox"] {
+      width: auto;
+      margin: 0 8px 0 0;
+      cursor: pointer;
+    }
+
+    .checkbox-item label {
+      cursor: pointer;
+      font-size: 14px;
+      color: #333;
+    }
+
+    .info-text {
+      font-size: 12px;
+      color: #666;
+      margin-top: 10px;
+      text-align: center;
+      font-style: italic;
+    }
   </style>
+  <script>
+    function proveriRazred() {
+      const razredInput = document.getElementById('razred_reg');
+      const predmetiBox = document.getElementById('predmeti-box');
+      const razred = razredInput.value.toLowerCase().trim();
+      
+      if (razred === 'profesor') {
+        predmetiBox.classList.add('active');
+      } else {
+        predmetiBox.classList.remove('active');
+        // Odstrani vse označene checkboxe
+        const checkboxes = document.querySelectorAll('.predmeti-box input[type="checkbox"]');
+        checkboxes.forEach(cb => cb.checked = false);
+      }
+    }
+  </script>
 </head>
 <body>
 
@@ -284,7 +368,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
       <input type="email" name="email_reg" placeholder="E-pošta" required value="<?php echo htmlspecialchars($_POST['email_reg'] ?? ''); ?>">
 
-      <input type="text" name="razred_reg" placeholder="Razred (R1A-R4A, E1A-E4A ali profesor)" required value="<?php echo htmlspecialchars($_POST['razred_reg'] ?? ''); ?>">
+      <input 
+        type="text" 
+        id="razred_reg"
+        name="razred_reg" 
+        placeholder="Razred (R1A-R4A, E1A-E4A ali profesor)" 
+        required 
+        value="<?php echo htmlspecialchars($_POST['razred_reg'] ?? ''); ?>"
+        onkeyup="proveriRazred()"
+        onchange="proveriRazred()">
+
+      <!-- BOX ZA IZBIRO PREDMETOV (SAMO ZA PROFESORJE) -->
+      <div id="predmeti-box" class="predmeti-box <?php echo (strtolower($_POST['razred_reg'] ?? '') === 'profesor') ? 'active' : ''; ?>">
+        <h3>📚 Izberite predmete, ki jih učite</h3>
+        <div class="checkbox-group">
+          <?php foreach ($vsi_predmeti as $predmet): ?>
+            <div class="checkbox-item">
+              <input 
+                type="checkbox" 
+                id="predmet_<?php echo $predmet['predmet_id']; ?>" 
+                name="predmeti[]" 
+                value="<?php echo $predmet['predmet_id']; ?>"
+                <?php echo (in_array($predmet['predmet_id'], $_POST['predmeti'] ?? [])) ? 'checked' : ''; ?>>
+              <label for="predmet_<?php echo $predmet['predmet_id']; ?>">
+                <?php echo htmlspecialchars($predmet['ime_predmeta']); ?>
+              </label>
+            </div>
+          <?php endforeach; ?>
+        </div>
+        <p class="info-text">*Izberite vsaj en predmet</p>
+      </div>
 
       <input type="password" name="geslo_reg" placeholder="Geslo (min. 10 znakov)" required>
 
