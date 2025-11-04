@@ -355,10 +355,10 @@ foreach ($oddaje as $oddaja) {
     <?php endif; ?>
 
     <div class="tabs">
-      <button class="tab" onclick="switchTab('dodaj')">📝 Dodaj nalogo</button>
-      <button class="tab active" onclick="switchTab('upravljanje')">📋 Vse naloge (<?php echo count($vse_naloge); ?>)</button>
-      <button class="tab" onclick="switchTab('pregled')">⏳ Za pregled <?php if(!empty($oddaje_za_pregled)): ?><span class="badge"><?php echo count($oddaje_za_pregled); ?></span><?php endif; ?></button>
-      <button class="tab" onclick="switchTab('pregledane')">✅ Pregledane (<?php echo count($pregledane); ?>)</button>
+      <button class="tab" onclick="switchTab('dodaj')">Dodaj nalogo</button>
+      <button class="tab active" onclick="switchTab('upravljanje')">Vse naloge (<?php echo count($vse_naloge); ?>)</button>
+      <button class="tab" onclick="switchTab('pregled')">Za pregled <?php if(!empty($oddaje_za_pregled)): ?><span class="badge"><?php echo count($oddaje_za_pregled); ?></span><?php endif; ?></button>
+      <button class="tab" onclick="switchTab('pregledane')">Pregledane (<?php echo count($pregledane); ?>)</button>
     </div>
 
     <div id="tab-dodaj" class="tab-content">
@@ -388,7 +388,7 @@ foreach ($oddaje as $oddaja) {
             <label>Rok za oddajo:</label>
             <input type="datetime-local" name="rok" required>
           </div>
-          <button type="submit" name="dodaj_nalogo" class="btn">✅ Dodaj domačo nalogo</button>
+          <button type="submit" name="dodaj_nalogo" class="btn">Dodaj domačo nalogo</button>
         </form>
       </div>
     </div>
@@ -397,7 +397,7 @@ foreach ($oddaje as $oddaja) {
       <div class="sekcija">
         <h2>Vse domače naloge</h2>
         <?php if (empty($vse_naloge)): ?>
-          <div class="prazen">🔭 Še niste dodali nobene domače naloge.</div>
+          <div class="prazen">Še niste dodali nobene domače naloge.</div>
         <?php else: ?>
           <?php foreach ($vse_naloge as $naloga): ?>
             <div class="naloga-card">
@@ -415,9 +415,9 @@ foreach ($oddaje as $oddaja) {
                     <?php endif; ?>
                   </div>
                   <div class="naloga-statistika">
-                    <div class="stat-item">📊 <strong><?php echo $naloga['st_oddaj']; ?></strong> oddaj skupaj</div>
+                    <div class="stat-item"><strong><?php echo $naloga['st_oddaj']; ?></strong> oddaj skupaj</div>
                     <?php if ($naloga['st_v_pregledu'] > 0): ?>
-                      <div class="stat-item" style="color: #ffc107;">⏳ <strong><?php echo $naloga['st_v_pregledu']; ?></strong> čaka na pregled</div>
+                      <div class="stat-item" style="color: #ffc107;"> <strong><?php echo $naloga['st_v_pregledu']; ?></strong> čaka na pregled</div>
                     <?php endif; ?>
                   </div>
                 </div>
@@ -436,7 +436,7 @@ foreach ($oddaje as $oddaja) {
       <div class="sekcija">
         <h2>Oddaje za pregled</h2>
         <?php if (empty($oddaje_za_pregled)): ?>
-          <div class="prazen">🔭 Ni novih oddaj za pregled.</div>
+          <div class="prazen"> Ni novih oddaj za pregled.</div>
         <?php else: ?>
           <?php foreach ($oddaje_za_pregled as $oddaja): ?>
             <div class="oddaja-card">
@@ -458,7 +458,7 @@ foreach ($oddaje as $oddaja) {
                 <span class="status-badge status-oddano">Oddano</span>
               </div>
               <div class="datoteka-info">
-                <strong>📎 Oddana datoteka:</strong> <?php echo htmlspecialchars($oddaja['datoteka_ime']); ?><br>
+                <strong>Oddana datoteka:</strong> <?php echo htmlspecialchars($oddaja['datoteka_ime']); ?><br>
                 <a href="<?php echo htmlspecialchars($oddaja['datoteka_link']); ?>" download class="btn btn-prenesi">⬇️ Prenesi datoteko</a>
               </div>
               <form method="POST" class="oceni-forma">
@@ -502,8 +502,8 @@ foreach ($oddaje as $oddaja) {
                 </span>
               </div>
               <div class="datoteka-info">
-                <strong>📎 Oddana datoteka:</strong> <?php echo htmlspecialchars($oddaja['datoteka_ime']); ?><br>
-                <a href="<?php echo htmlspecialchars($oddaja['datoteka_link']); ?>" download class="btn btn-prenesi">⬇️ Prenesi datoteko</a>
+                <strong> Oddana datoteka:</strong> <?php echo htmlspecialchars($oddaja['datoteka_ime']); ?><br>
+                <a href="<?php echo htmlspecialchars($oddaja['datoteka_link']); ?>" download class="btn btn-prenesi">⬇ Prenesi datoteko</a>
                  </div>
               <?php if ($oddaja['komentar_profesorja']): ?>
                 <div class="komentar-box">

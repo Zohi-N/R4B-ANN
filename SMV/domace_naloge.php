@@ -331,7 +331,7 @@ foreach ($naloge as $naloga) {
 
     <div class="sekcija">
       <h2>
-        📝 Neodane naloge 
+        Neodane naloge 
         <?php if (!empty($neodane)): ?>
           <span class="badge"><?php echo count($neodane); ?></span>
         <?php endif; ?>
@@ -349,7 +349,7 @@ foreach ($naloge as $naloga) {
             <div class="naloga-info">Objavljeno: <?php echo date('d.m.Y H:i', strtotime($naloga['datum_objave'])); ?></div>
             <div class="naloga-info <?php echo $je_zamujeno ? 'zamujeno' : ''; ?>">
               Rok: <?php echo date('d.m.Y H:i', strtotime($naloga['rok'])); ?>
-              <?php if ($je_zamujeno): ?>⚠️ ZAMUJENO<?php endif; ?>
+              <?php if ($je_zamujeno): ?> ZAMUJENO<?php endif; ?>
             </div>
             <div class="naloga-navodila">
               <strong>Navodila:</strong><br><?php echo nl2br(htmlspecialchars($naloga['navodila'])); ?>
@@ -363,7 +363,7 @@ foreach ($naloge as $naloga) {
                 <input type="file" name="datoteka" id="file_<?php echo $naloga['naloga_id']; ?>" required 
                        accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png,.zip,.rar" onchange="updateFileName(this)">
                 <label for="file_<?php echo $naloga['naloga_id']; ?>" class="file-input-label" id="label_<?php echo $naloga['naloga_id']; ?>">
-                  📎 Kliknite za izbiro datoteke<br>
+                  Kliknite za izbiro datoteke<br>
                   <small>Dovoljeni formati: PDF, DOC, DOCX, TXT, JPG, PNG, ZIP, RAR (maks. 10MB)</small>
                 </label>
               </div>
@@ -376,7 +376,7 @@ foreach ($naloge as $naloga) {
 
     <div class="sekcija">
       <h2>
-        ⏳ V pregledu 
+         V pregledu 
         <?php if (!empty($oddane_v_pregledu)): ?>
           <span class="badge rumena"><?php echo count($oddane_v_pregledu); ?></span>
         <?php endif; ?>
@@ -393,8 +393,8 @@ foreach ($naloge as $naloga) {
             <span class="status-badge status-oddano">⏳ Čaka na pregled</span>
 
             <div class="oddaja-info">
-              ✅ <strong>Oddano:</strong> <?php echo date('d.m.Y H:i', strtotime($naloga['datum_oddaje'])); ?><br>
-              📎 <strong>Datoteka:</strong> <a href="<?php echo htmlspecialchars($naloga['datoteka_link']); ?>" download>
+              <strong>Oddano:</strong> <?php echo date('d.m.Y H:i', strtotime($naloga['datum_oddaje'])); ?><br>
+              <strong>Datoteka:</strong> <a href="<?php echo htmlspecialchars($naloga['datoteka_link']); ?>" download>
                 <?php echo htmlspecialchars($naloga['datoteka_ime']); ?>
               </a>
             </div>
@@ -408,14 +408,14 @@ foreach ($naloge as $naloga) {
                        accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png,.zip,.rar"
                        onchange="updateFileName(this); showCheckbox(<?php echo $naloga['naloga_id']; ?>)">
                 <label for="refile_<?php echo $naloga['naloga_id']; ?>" class="file-input-label" id="relabel_<?php echo $naloga['naloga_id']; ?>">
-                  🔄 Želite ponovno oddati? Kliknite za izbiro nove datoteke
+                   Želite ponovno oddati? Kliknite za izbiro nove datoteke
                 </label>
               </div>
 
               <div class="checkbox-wrapper" id="checkbox_<?php echo $naloga['naloga_id']; ?>" style="display: none;">
                 <input type="checkbox" name="potrdi_povozi" value="da" id="potrdi_<?php echo $naloga['naloga_id']; ?>" required>
                 <label for="potrdi_<?php echo $naloga['naloga_id']; ?>">
-                  ⚠️ Potrjujem, da želim zamenjati obstoječo oddajo z novo datoteko
+                   Potrjujem, da želim zamenjati obstoječo oddajo z novo datoteko
                 </label>
               </div>
 
@@ -461,7 +461,7 @@ foreach ($naloge as $naloga) {
 
             <?php if ($naloga['komentar_profesorja']): ?>
               <div class="komentar-profesorja">
-                <strong>💬 Komentar profesorja:</strong><br>
+                <strong> Komentar profesorja:</strong><br>
                 <?php echo nl2br(htmlspecialchars($naloga['komentar_profesorja'])); ?>
               </div>
             <?php endif; ?>
